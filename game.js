@@ -20,6 +20,7 @@ const GUNNER_SHOOT_INTERVAL  = 2.4;   // seconds
 
 function enemyCountForLevel(level)  { return 1 + level * 2; }
 function gunnerCountForLevel(level) { return Math.max(0, level - 1); }
+function maxHPForLevel(level)       { return PLAYER_MAX_HP + (level - 1); }
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
@@ -33,6 +34,7 @@ let gameState = State.START;
 
 // ── Level / run tracking ──────────────────────────────────────────────────────
 let currentLevel   = 1;
+let currentMaxHP   = PLAYER_MAX_HP;
 let runScore       = 0;
 let levelStartTime = 0;
 let levelActive    = false;
@@ -416,6 +418,7 @@ function drawEnemyBullets() {
 
 // ── Enemies ───────────────────────────────────────────────────────────────────
 let enemies = [];
+let hearts  = [];
 
 function spawnEnemies(positions, level) {
   const gunners = gunnerCountForLevel(level);
@@ -504,6 +507,10 @@ function resolveBulletEnemyCollisions() {
           // Kill burst
           spawnParticles(e.x, e.y, 14, '#cc2200', 130, 4);
           spawnParticles(e.x, e.y,  6, '#ff6633',  70, 2.5);
+          // Gunners have a random chance to drop a heart
+          if (e.isGunner && Math.random() < 0.42) {
+            hearts.push({ x: e.x, y: e.y, bob: Math.random() * Math.PI * 2 });
+          }
         } else {
           // Hit sparks
           spawnParticles(e.x, e.y, 6, '#ff8844', 90, 3);
@@ -552,6 +559,56 @@ function drawEnemies() {
       ctx.fillStyle = '#ff5533';
       ctx.fillText('GUN', e.x, by - 2);
     }
+  }
+}
+
+// ── Hearts (HP pickups) ───────────────────────────────────────────────────────
+function updateHearts(dt) {
+  for (const h of hearts) h.bob += dt * 2.8;
+}
+
+function collectHearts() {
+  hearts = hearts.filter(h => {
+    if (Math.hypot(player.x - h.x, player.y - h.y) < PLAYER_R + 13) {
+      player.hp = Math.min(player.hp + 1, currentMaxHP);
+      spawnPopup(h.x, h.y - 22, '+1 HP', '#ff6699');
+      spawnParticles(h.x, h.y, 8, '#ff3366', 60, 2.2);
+      return false;
+    }
+    return true;
+  });
+}
+
+function heartPath(sz) {
+  const r   = sz * 0.45;
+  const off = sz * 0.26;
+  const cy  = -sz * 0.1;
+  ctx.beginPath();
+  ctx.arc(-off, cy, r, Math.PI, 0, true);
+  ctx.arc( off, cy, r, Math.PI, 0, true);
+  ctx.lineTo(0, sz * 0.65);
+  ctx.closePath();
+}
+
+function drawHearts() {
+  for (const h of hearts) {
+    const bob = Math.sin(h.bob) * 2.5;
+    ctx.save();
+    ctx.translate(h.x, h.y + bob);
+    // Glow halo
+    heartPath(17);
+    ctx.fillStyle = 'rgba(255,50,100,0.22)'; ctx.fill();
+    // Body
+    heartPath(13);
+    ctx.fillStyle = '#ff3366'; ctx.fill();
+    // Rim
+    ctx.strokeStyle = '#cc1144'; ctx.lineWidth = 1; ctx.stroke();
+    // Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.38)';
+    ctx.beginPath();
+    ctx.ellipse(-3, -3, 3, 2, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -641,8 +698,8 @@ function drawFloor() {
 // ── Score popups ──────────────────────────────────────────────────────────────
 let popups = [];
 
-function spawnPopup(x, y, text) {
-  popups.push({ x, y, text, life: 1.0 });
+function spawnPopup(x, y, text, col = '#ffe066') {
+  popups.push({ x, y, text, col, life: 1.0 });
 }
 
 function updatePopups(dt) {
@@ -654,7 +711,7 @@ function drawPopups() {
     ctx.globalAlpha = Math.min(1, p.life * 1.8);
     ctx.font        = 'bold 15px Courier New';
     ctx.textAlign   = 'center';
-    ctx.fillStyle   = '#ffe066';
+    ctx.fillStyle   = p.col;
     ctx.strokeStyle = 'rgba(0,0,0,0.6)';
     ctx.lineWidth   = 3;
     ctx.strokeText(p.text, p.x, p.y);
@@ -669,6 +726,7 @@ function drawScene() {
   ctx.translate(shake.ox, shake.oy);
   drawFloor();
   drawContainers();
+  drawHearts();
   drawParticles();
   drawBullets();
   drawEnemyBullets();
@@ -702,7 +760,7 @@ function drawHUD() {
   // HP pips — top right (supports half-pips from knife damage)
   ctx.font = 'bold 12px Courier New'; ctx.textAlign = 'right'; ctx.fillStyle = '#e44';
   ctx.fillText('HP', CANVAS_W - PAD, 24);
-  for (let i = 0; i < PLAYER_MAX_HP; i++) {
+  for (let i = 0; i < currentMaxHP; i++) {
     const px = CANVAS_W - PAD - 22 - i * 20, py = 18, R = 7;
     // Empty background
     ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
@@ -787,6 +845,7 @@ function generatePlayerSpawnPoints(enemyPositions) {
 // ── Begin level ───────────────────────────────────────────────────────────────
 function beginLevel(level) {
   currentLevel      = level;
+  hearts            = [];
   bullets           = [];
   enemyBullets      = [];
   popups            = [];
@@ -795,7 +854,15 @@ function beginLevel(level) {
   player.walkTimer  = 0;
   player.isMoving   = false;
   player.flashTimer = 0;
-  if (level === 1) { player.ammo = START_AMMO; player.hp = PLAYER_MAX_HP; }
+  if (level === 1) {
+    player.ammo  = START_AMMO;
+    currentMaxHP = PLAYER_MAX_HP;
+    player.hp    = currentMaxHP;
+  } else {
+    // Gain +1 max HP entering each new level; current HP also goes up 1 (capped)
+    currentMaxHP += 1;
+    player.hp = Math.min(player.hp + 1, currentMaxHP);
+  }
 
   const enemyPos    = generateEnemyPositions(enemyCountForLevel(level));
   playerSpawnPoints = generatePlayerSpawnPoints(enemyPos);
@@ -814,10 +881,11 @@ function beginLevel(level) {
 }
 
 function startGame() {
-  runScore    = 0;
-  session     = { shots: 0, hits: 0, kills: 0 };
-  player.ammo = START_AMMO;
-  player.hp   = PLAYER_MAX_HP;
+  runScore     = 0;
+  currentMaxHP = PLAYER_MAX_HP;
+  session      = { shots: 0, hits: 0, kills: 0 };
+  player.ammo  = START_AMMO;
+  player.hp    = PLAYER_MAX_HP;
   beginLevel(1);
 }
 
@@ -831,9 +899,11 @@ function loop(ts) {
     updateBullets(dt);
     updateEnemyBullets(dt);
     updateEnemies(dt);
+    updateHearts(dt);
     resolveBulletEnemyCollisions();
     resolveEnemyBulletPlayerCollisions();
     resolveEnemyMeleePlayerCollisions();
+    collectHearts();
     updateParticles(dt);
     updatePopups(dt);
     updateShake(dt);
