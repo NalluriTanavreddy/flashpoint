@@ -103,6 +103,47 @@ function updateShake(dt) {
   } else { shake.ox = 0; shake.oy = 0; }
 }
 
+// ── Audio ─────────────────────────────────────────────────────────────────────
+let _ac = null;
+function ac() {
+  if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (_ac.state === 'suspended') _ac.resume();
+  return _ac;
+}
+
+function _tone(c, freq, t, dur, vol, type, freqEnd) {
+  const osc = c.createOscillator(), g = c.createGain();
+  osc.type = type; osc.frequency.setValueAtTime(freq, t);
+  if (freqEnd !== undefined) osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+  g.gain.setValueAtTime(0.001, t);
+  g.gain.linearRampToValueAtTime(vol, t + dur * 0.04);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(g); g.connect(c.destination);
+  osc.start(t); osc.stop(t + dur + 0.01);
+}
+
+function _noise(c, t, dur, vol) {
+  const sr = c.sampleRate, len = Math.ceil(sr * dur);
+  const buf = c.createBuffer(1, len, sr);
+  const d   = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource(), g = c.createGain();
+  src.buffer = buf;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(g); g.connect(c.destination);
+  src.start(t);
+}
+
+function sndShoot()      { try { const c=ac(),t=c.currentTime; _noise(c,t,0.055,0.16); _tone(c,300,t,0.04,0.1,'square',180); } catch(e){} }
+function sndEnemyHit()   { try { const c=ac(),t=c.currentTime; _tone(c,180,t,0.09,0.14,'sawtooth',120); _noise(c,t,0.05,0.07); } catch(e){} }
+function sndEnemyKill()  { try { const c=ac(),t=c.currentTime; _tone(c,100,t,0.22,0.26,'sawtooth',55); _noise(c,t,0.14,0.13); } catch(e){} }
+function sndPlayerHit()  { try { const c=ac(),t=c.currentTime; _tone(c,110,t,0.2,0.3,'sawtooth',80); _noise(c,t,0.12,0.2); } catch(e){} }
+function sndHeart()      { try { const c=ac(),t=c.currentTime; _tone(c,660,t,0.14,0.16,'sine'); _tone(c,880,t+0.08,0.14,0.16,'sine'); _tone(c,1100,t+0.16,0.18,0.12,'sine'); } catch(e){} }
+function sndLevelClear() { try { const c=ac(),t=c.currentTime; _tone(c,440,t,0.16,0.2,'sine'); _tone(c,550,t+0.14,0.16,0.2,'sine'); _tone(c,660,t+0.28,0.22,0.2,'sine'); } catch(e){} }
+function sndDeath()      { try { const c=ac(),t=c.currentTime; _tone(c,220,t,0.14,0.24,'sawtooth',200); _tone(c,160,t+0.13,0.14,0.2,'sawtooth',140); _tone(c,90,t+0.26,0.28,0.18,'sawtooth',60); _noise(c,t,0.38,0.1); } catch(e){} }
+function sndDryFire()    { try { const c=ac(),t=c.currentTime; _tone(c,90,t,0.06,0.08,'square'); } catch(e){} }
+
 // ── Input ─────────────────────────────────────────────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => { keys[e.code] = true; });
@@ -327,9 +368,10 @@ function drawPlayer() {
 let bullets = [];
 
 function spawnBullet() {
-  if (player.ammo <= 0) return;
+  if (player.ammo <= 0) { sndDryFire(); return; }
   player.ammo--; session.shots++;
   player.muzzleTimer = 0.07;
+  sndShoot();
   const tip = PLAYER_R + 22;
   spawnParticles(
     player.x + Math.cos(player.angle) * tip,
@@ -383,6 +425,7 @@ function resolveEnemyBulletPlayerCollisions() {
     if (Math.hypot(b.x - player.x, b.y - player.y) < PLAYER_R + BULLET_R) {
       player.hp--;
       player.flashTimer = 0.18;
+      sndPlayerHit();
       triggerShake(7, 0.22);
       spawnParticles(player.x, player.y, 8, '#4488ff', 80, 3);
       if (player.hp <= 0) triggerPlayerDeath();
@@ -400,6 +443,7 @@ function resolveEnemyMeleePlayerCollisions() {
       player.hp        -= 0.5;
       player.flashTimer = 0.22;
       e.meleeTimer      = 0.85;
+      sndPlayerHit();
       triggerShake(5, 0.18);
       spawnParticles(player.x, player.y, 6, '#ff3333', 70, 2.5);
       if (player.hp <= 0) triggerPlayerDeath();
@@ -499,6 +543,7 @@ function resolveBulletEnemyCollisions() {
         hit = true; hitEnemies.add(e);
         e.hp--; e.flashTimer = 0.12; session.hits++;
         if (e.hp <= 0) {
+          sndEnemyKill();
           session.kills++;
           const pts = 100 * currentLevel;
           runScore += pts;
@@ -512,6 +557,7 @@ function resolveBulletEnemyCollisions() {
             hearts.push({ x: e.x, y: e.y, bob: Math.random() * Math.PI * 2 });
           }
         } else {
+          sndEnemyHit();
           // Hit sparks
           spawnParticles(e.x, e.y, 6, '#ff8844', 90, 3);
           liveEnemies.push(e);
@@ -571,6 +617,7 @@ function collectHearts() {
   hearts = hearts.filter(h => {
     if (Math.hypot(player.x - h.x, player.y - h.y) < PLAYER_R + 13) {
       player.hp = Math.min(player.hp + 1, currentMaxHP);
+      sndHeart();
       spawnPopup(h.x, h.y - 22, '+1 HP', '#ff6699');
       spawnParticles(h.x, h.y, 8, '#ff3366', 60, 2.2);
       return false;
@@ -615,6 +662,7 @@ function drawHearts() {
 // ── Player death ──────────────────────────────────────────────────────────────
 function triggerPlayerDeath() {
   if (gameState !== State.PLAYING) return;
+  sndDeath();
   levelActive = false;
   gameState   = State.DEAD;
   spawnIndex++;   // next run uses the next spawn point in the rotation
@@ -637,6 +685,7 @@ function checkLevelClear() {
   if (!levelActive || enemies.length > 0) return;
   levelActive = false;
   gameState   = State.LEVEL_CLEAR;
+  sndLevelClear();
 
   const elapsed   = (performance.now() - levelStartTime) / 1000;
   const timeBonus = Math.max(0, Math.round(700 - elapsed * 28));
