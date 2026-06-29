@@ -435,8 +435,13 @@ function resolveBulletEnemyCollisions() {
       if (!hitEnemies.has(e) && Math.hypot(b.x - e.x, b.y - e.y) < ENEMY_R + BULLET_R) {
         hit = true; hitEnemies.add(e);
         e.hp--; e.flashTimer = 0.12; session.hits++;
-        if (e.hp <= 0) { session.kills++; runScore += 100; player.ammo += AMMO_PER_KILL; }
-        else           { liveEnemies.push(e); }
+        if (e.hp <= 0) {
+          session.kills++;
+          const pts = 100 * currentLevel;
+          runScore += pts;
+          player.ammo += AMMO_PER_KILL;
+          spawnPopup(e.x, e.y - 20, `+${pts}`);
+        } else { liveEnemies.push(e); }
         break;
       }
     }
@@ -508,14 +513,23 @@ function checkLevelClear() {
   if (!levelActive || enemies.length > 0) return;
   levelActive = false;
   gameState   = State.LEVEL_CLEAR;
+
   const elapsed   = (performance.now() - levelStartTime) / 1000;
-  const timeBonus = Math.max(0, Math.round(500 - elapsed * 20));
-  const accBonus  = session.shots > 0 ? Math.round((session.hits / session.shots) * 200) : 0;
+  const timeBonus = Math.max(0, Math.round(700 - elapsed * 28));
+  const accBonus  = session.shots > 0
+    ? Math.round((session.hits / session.shots) * 300)
+    : 0;
   runScore += timeBonus + accBonus;
+
+  // Persist hi-score and best level immediately on clear
   const saved = loadStats();
-  if (currentLevel > saved.bestLevel) { saved.bestLevel = currentLevel; saveStats(saved); }
+  let dirty = false;
+  if (runScore > saved.hiScore)          { saved.hiScore   = runScore;      dirty = true; }
+  if (currentLevel > saved.bestLevel)    { saved.bestLevel = currentLevel;  dirty = true; }
+  if (dirty) { saveStats(saved); refreshStartScreen(); }
+
   document.getElementById('level-score').textContent     = runScore;
-  document.getElementById('level-timebonus').textContent = `+${timeBonus}`;
+  document.getElementById('level-timebonus').textContent = `+${timeBonus} time  /  +${accBonus} acc`;
   document.getElementById('level-acc').textContent       = fmtAccuracy(session.hits, session.shots);
   showScreen('level-screen');
 }
@@ -557,6 +571,31 @@ function drawFloor() {
   ctx.strokeRect(10, 10, CANVAS_W - 20, CANVAS_H - 20);
 }
 
+// ── Score popups ──────────────────────────────────────────────────────────────
+let popups = [];
+
+function spawnPopup(x, y, text) {
+  popups.push({ x, y, text, life: 1.0 });
+}
+
+function updatePopups(dt) {
+  popups = popups.filter(p => { p.life -= dt * 1.4; p.y -= dt * 38; return p.life > 0; });
+}
+
+function drawPopups() {
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.life * 1.8);
+    ctx.font        = 'bold 15px Courier New';
+    ctx.textAlign   = 'center';
+    ctx.fillStyle   = '#ffe066';
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth   = 3;
+    ctx.strokeText(p.text, p.x, p.y);
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // ── Draw scene ────────────────────────────────────────────────────────────────
 function drawScene() {
   drawFloor();
@@ -565,6 +604,7 @@ function drawScene() {
   drawEnemyBullets();
   drawEnemies();
   drawPlayer();
+  drawPopups();
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
@@ -678,6 +718,7 @@ function beginLevel(level) {
   currentLevel      = level;
   bullets           = [];
   enemyBullets      = [];
+  popups            = [];
   player.angle      = 0;
   player.walkTimer  = 0;
   player.isMoving   = false;
@@ -721,6 +762,7 @@ function loop(ts) {
     resolveBulletEnemyCollisions();
     resolveEnemyBulletPlayerCollisions();
     resolveEnemyMeleePlayerCollisions();
+    updatePopups(dt);
     checkLevelClear();
     drawScene();
     drawHUD();
