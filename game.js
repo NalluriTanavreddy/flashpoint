@@ -811,8 +811,9 @@ function drawHUD() {
     ctx.fillStyle = i < player.ammo ? '#ffe066' : '#333'; ctx.fill();
     ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.stroke();
   }
-  ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#777';
-  ctx.fillText(`ACC  ${fmtAccuracy(session.hits, session.shots)}   KILLS  ${session.kills}`, PAD, CANVAS_H - PAD);
+  // ACC/KILLS sits just above the minimap panel
+  ctx.font = '11px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#555';
+  ctx.fillText(`ACC ${fmtAccuracy(session.hits, session.shots)}  KILLS ${session.kills}`, 14, CANVAS_H - 14 - 100 - 6);
 
   // HP pips — top right (supports half-pips from knife damage)
   ctx.font = 'bold 12px Courier New'; ctx.textAlign = 'right'; ctx.fillStyle = '#e44';
@@ -837,6 +838,76 @@ function drawHUD() {
     ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
     ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.stroke();
   }
+
+  drawMinimap();
+}
+
+// ── Minimap ───────────────────────────────────────────────────────────────────
+const MINIMAP_W   = 150;
+const MINIMAP_H   = 100;
+const MINIMAP_PAD = 14;
+
+function drawMinimap() {
+  const mx = MINIMAP_PAD;
+  const my = CANVAS_H - MINIMAP_PAD - MINIMAP_H;
+  const sx = MINIMAP_W / CANVAS_W;
+  const sy = MINIMAP_H / CANVAS_H;
+
+  ctx.save();
+  ctx.translate(mx, my);
+
+  // Dark panel background
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
+  ctx.strokeStyle = '#3a3a3e';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, MINIMAP_W - 1, MINIMAP_H - 1);
+
+  ctx.font = '8px Courier New';
+  ctx.fillStyle = '#3a3a3e';
+  ctx.textAlign = 'left';
+  ctx.fillText('RADAR', 4, 9);
+
+  // Containers — tiny shapes matching their in-world type
+  for (const c of containers) {
+    const cx = c.x * sx, cy = c.y * sy;
+    if (c.type === 'barrel') {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#6a3a00';
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#1a4a1a';
+      ctx.fillRect(cx - 1.5, cy - 1.5, 3, 3);
+    }
+  }
+
+  // Enemy blips — orange for gunners, red for rushers
+  for (const e of enemies) {
+    const ex = e.x * sx, ey = e.y * sy;
+    ctx.beginPath();
+    ctx.arc(ex, ey, e.isGunner ? 2.5 : 2, 0, Math.PI * 2);
+    ctx.fillStyle = e.isGunner ? '#ff8833' : '#cc2200';
+    ctx.fill();
+  }
+
+  // Player — blue dot with a short facing line
+  const px = player.x * sx, py = player.y * sy;
+  ctx.strokeStyle = 'rgba(100,170,255,0.65)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px + Math.cos(player.angle) * 7, py + Math.sin(player.angle) * 7);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(px, py, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#4488ff';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 // ── Screen helpers ─────────────────────────────────────────────────────────────
