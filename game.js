@@ -10,10 +10,16 @@ const AMMO_PER_KILL = 3;
 const ENEMY_SPEED   = 58;
 const ENEMY_R       = 18;
 const ENEMY_MAX_HP  = 2;
-const CRATE_SIZE    = 42;
-const BARREL_R      = 18;
+const CRATE_SIZE             = 42;
+const BARREL_R               = 18;
+const PLAYER_MAX_HP          = 3;
+const ENEMY_BULLET_SPEED     = 190;   // px/s — slower so cover is useful
+const GUNNER_SHOOT_RANGE     = 370;   // px
+const GUNNER_PREFERRED_DIST  = 215;   // px — gunners try to keep this gap
+const GUNNER_SHOOT_INTERVAL  = 2.4;   // seconds
 
-function enemyCountForLevel(level) { return 1 + level * 2; }
+function enemyCountForLevel(level)  { return 1 + level * 2; }
+function gunnerCountForLevel(level) { return Math.max(0, level - 1); }
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
@@ -223,6 +229,7 @@ const player = {
   x: CANVAS_W / 2, y: CANVAS_H / 2,
   angle: 0, ammo: START_AMMO,
   walkTimer: 0, isMoving: false,
+  hp: PLAYER_MAX_HP, flashTimer: 0,
 };
 
 function updatePlayer(dt) {
@@ -240,13 +247,17 @@ function updatePlayer(dt) {
   player.y = Math.max(PLAYER_R, Math.min(CANVAS_H - PLAYER_R, player.y));
   player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
   for (const c of containers) pushEntityOutOfContainer(player, PLAYER_R, c);
+  if (player.flashTimer > 0) player.flashTimer -= dt;
 }
 
 function drawPlayer() {
+  const flash    = player.flashTimer > 0;
+  const bodyCol  = flash ? '#fff' : '#2255cc';
+  const headCol  = flash ? '#fff' : '#d4a97a';
   drawTopDownPerson(
     player.x, player.y, player.angle,
     player.walkTimer, player.isMoving,
-    '#2255cc', '#d4a97a'
+    bodyCol, headCol
   );
   // Gun barrel (world-space, always aims at mouse)
   ctx.save();
@@ -295,12 +306,50 @@ function drawBullets() {
   }
 }
 
+// ── Enemy bullets ─────────────────────────────────────────────────────────────
+let enemyBullets = [];
+
+function updateEnemyBullets(dt) {
+  for (const b of enemyBullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
+  enemyBullets = enemyBullets.filter(b => {
+    if (b.x < -BULLET_R || b.x > CANVAS_W + BULLET_R ||
+        b.y < -BULLET_R || b.y > CANVAS_H + BULLET_R) return false;
+    for (const c of containers) if (bulletHitsContainer(b, c)) return false;
+    return true;
+  });
+}
+
+function resolveEnemyBulletPlayerCollisions() {
+  if (gameState !== State.PLAYING) return;
+  enemyBullets = enemyBullets.filter(b => {
+    if (Math.hypot(b.x - player.x, b.y - player.y) < PLAYER_R + BULLET_R) {
+      player.hp--;
+      player.flashTimer = 0.18;
+      if (player.hp <= 0) triggerPlayerDeath();
+      return false;
+    }
+    return true;
+  });
+}
+
+function drawEnemyBullets() {
+  for (const b of enemyBullets) {
+    ctx.beginPath(); ctx.arc(b.x, b.y, BULLET_R - 1, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff5533'; ctx.fill();
+    ctx.beginPath(); ctx.arc(b.x, b.y, BULLET_R + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,80,40,0.3)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+}
+
 // ── Enemies ───────────────────────────────────────────────────────────────────
 let enemies = [];
 
-function spawnEnemies(positions) {
-  enemies = positions.map(([x, y]) => ({
+function spawnEnemies(positions, level) {
+  const gunners = gunnerCountForLevel(level);
+  enemies = positions.map(([x, y], i) => ({
     x, y, hp: ENEMY_MAX_HP, angle: 0, flashTimer: 0, walkTimer: 0,
+    isGunner:   i < gunners,
+    shootTimer: GUNNER_SHOOT_INTERVAL * (0.5 + Math.random()),
   }));
 }
 
@@ -309,36 +358,56 @@ function updateEnemies(dt) {
     const tdx = player.x - e.x, tdy = player.y - e.y;
     const dist = Math.hypot(tdx, tdy);
 
-    // Base attraction toward player (unit vector)
-    let moveX = dist > 1 ? tdx / dist : 0;
-    let moveY = dist > 1 ? tdy / dist : 0;
+    // Desired movement: toward player for rushers, distance-keeping for gunners
+    let moveX = 0, moveY = 0;
+    if (e.isGunner) {
+      const diff = dist - GUNNER_PREFERRED_DIST;
+      if (Math.abs(diff) > 20) {
+        // Move toward or away to maintain preferred standoff
+        const sign = diff > 0 ? 1 : -1;
+        moveX = (tdx / dist) * sign;
+        moveY = (tdy / dist) * sign;
+      }
+      // Gunner shooting
+      if (e.shootTimer > 0) {
+        e.shootTimer -= dt;
+      } else if (dist < GUNNER_SHOOT_RANGE) {
+        e.shootTimer = GUNNER_SHOOT_INTERVAL + Math.random() * 0.6;
+        const a = Math.atan2(tdy, tdx);
+        enemyBullets.push({
+          x: e.x + Math.cos(a) * (ENEMY_R + 6),
+          y: e.y + Math.sin(a) * (ENEMY_R + 6),
+          vx: Math.cos(a) * ENEMY_BULLET_SPEED,
+          vy: Math.sin(a) * ENEMY_BULLET_SPEED,
+        });
+      }
+    } else {
+      // Rusher: charge straight at player
+      if (dist > 1) { moveX = tdx / dist; moveY = tdy / dist; }
+    }
 
-    // Repulsion force from nearby containers — steers around obstacles
+    // Container steering repulsion (shared by all enemy types)
     for (const c of containers) {
       const cdx = e.x - c.x, cdy = e.y - c.y;
       const cdist = Math.hypot(cdx, cdy);
       const cr      = (c.type === 'barrel' ? BARREL_R : CRATE_SIZE / 2) + ENEMY_R;
-      const detectR = cr + 42; // awareness radius beyond contact
+      const detectR = cr + 42;
       if (cdist < detectR && cdist > 0.01) {
-        // Strength rises steeply as enemy approaches the container surface
         const t = (detectR - cdist) / detectR;
-        const strength = t * t * 2.6;
-        moveX += (cdx / cdist) * strength;
-        moveY += (cdy / cdist) * strength;
+        moveX += (cdx / cdist) * t * t * 2.6;
+        moveY += (cdy / cdist) * t * t * 2.6;
       }
     }
 
-    // Normalise combined vector and move
     const moveLen = Math.hypot(moveX, moveY);
-    if (moveLen > 0.01 && dist > 1) {
+    if (moveLen > 0.01) {
       e.x += (moveX / moveLen) * ENEMY_SPEED * dt;
       e.y += (moveY / moveLen) * ENEMY_SPEED * dt;
       e.walkTimer += dt * 5;
     }
 
-    e.angle = Math.atan2(tdy, tdx); // always face the player
+    e.angle = Math.atan2(tdy, tdx);
     if (e.flashTimer > 0) e.flashTimer -= dt;
-    // Safety push-out in case of overlap after steering
     for (const c of containers) pushEntityOutOfContainer(e, ENEMY_R, c);
   }
 }
@@ -365,18 +434,57 @@ function resolveBulletEnemyCollisions() {
 
 function drawEnemies() {
   for (const e of enemies) {
-    const flash = e.flashTimer > 0;
+    const flash   = e.flashTimer > 0;
     const bodyCol = flash ? '#fff' : (e.hp === ENEMY_MAX_HP ? '#991111' : '#cc6622');
     const headCol = flash ? '#fff' : '#d4a97a';
     drawTopDownPerson(e.x, e.y, e.angle, e.walkTimer, true, bodyCol, headCol);
 
-    // HP bar (world-space, above figure)
-    const W = 34, H = 5, bx = e.x - W / 2, by = e.y - 42;
+    // Gunner carries a visible weapon
+    if (e.isGunner) {
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.angle);
+      ctx.translate(5, 4);
+      ctx.fillStyle = flash ? '#fff' : '#888';
+      ctx.fillRect(2, -2, 20, 4);   // barrel
+      ctx.fillStyle = flash ? '#fff' : '#555';
+      ctx.fillRect(2, -3.5, 8, 7);  // grip
+      ctx.restore();
+    }
+
+    // HP bar
+    const W = 34, H = 5, bx = e.x - W / 2, by = e.y - 44;
     ctx.fillStyle = '#400'; ctx.fillRect(bx, by, W, H);
     ctx.fillStyle = e.hp === ENEMY_MAX_HP ? '#4f4' : '#f84';
     ctx.fillRect(bx, by, W * (e.hp / ENEMY_MAX_HP), H);
     ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, W, H);
+
+    // [G] tag above gunner HP bar
+    if (e.isGunner) {
+      ctx.font = 'bold 9px Courier New'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff5533';
+      ctx.fillText('GUN', e.x, by - 2);
+    }
   }
+}
+
+// ── Player death ──────────────────────────────────────────────────────────────
+function triggerPlayerDeath() {
+  if (gameState !== State.PLAYING) return;
+  levelActive = false;
+  gameState   = State.DEAD;
+  const saved = loadStats();
+  saved.totalKills += session.kills;
+  saved.totalShots += session.shots;
+  saved.totalHits  += session.hits;
+  if (runScore > saved.hiScore) saved.hiScore = runScore;
+  saveStats(saved);
+  refreshStartScreen();
+  document.getElementById('death-score').textContent = runScore;
+  document.getElementById('death-level').textContent = currentLevel;
+  document.getElementById('death-kills').textContent = session.kills;
+  document.getElementById('death-acc').textContent   = fmtAccuracy(session.hits, session.shots);
+  showScreen('death-screen');
 }
 
 // ── Level clear ───────────────────────────────────────────────────────────────
@@ -438,6 +546,7 @@ function drawScene() {
   drawFloor();
   drawContainers();
   drawBullets();
+  drawEnemyBullets();
   drawEnemies();
   drawPlayer();
 }
@@ -462,6 +571,17 @@ function drawHUD() {
   }
   ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#777';
   ctx.fillText(`ACC  ${fmtAccuracy(session.hits, session.shots)}   KILLS  ${session.kills}`, PAD, CANVAS_H - PAD);
+
+  // HP pips — top right
+  ctx.font = 'bold 12px Courier New'; ctx.textAlign = 'right'; ctx.fillStyle = '#e44';
+  ctx.fillText('HP', CANVAS_W - PAD, 24);
+  for (let i = 0; i < PLAYER_MAX_HP; i++) {
+    const px = CANVAS_W - PAD - 22 - i * 20;
+    ctx.beginPath(); ctx.arc(px, 18, 7, 0, Math.PI * 2);
+    ctx.fillStyle   = i < player.hp ? '#e44' : '#333';
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+    ctx.fill(); ctx.stroke();
+  }
 }
 
 // ── Screen helpers ─────────────────────────────────────────────────────────────
@@ -495,15 +615,17 @@ function spawnPositionsForLevel(level) {
 function beginLevel(level) {
   currentLevel      = level;
   bullets           = [];
+  enemyBullets      = [];
   player.x          = CANVAS_W / 2;
   player.y          = CANVAS_H / 2;
   player.angle      = 0;
   player.walkTimer  = 0;
   player.isMoving   = false;
-  if (level === 1) player.ammo = START_AMMO;
+  player.flashTimer = 0;
+  if (level === 1) { player.ammo = START_AMMO; player.hp = PLAYER_MAX_HP; }
   const enemyPos = spawnPositionsForLevel(level);
   containers     = generateContainers(enemyPos);
-  spawnEnemies(enemyPos);
+  spawnEnemies(enemyPos, level);
   levelStartTime = performance.now();
   levelActive    = true;
   hideAllScreens();
@@ -514,6 +636,7 @@ function startGame() {
   runScore    = 0;
   session     = { shots: 0, hits: 0, kills: 0 };
   player.ammo = START_AMMO;
+  player.hp   = PLAYER_MAX_HP;
   beginLevel(1);
 }
 
@@ -525,8 +648,10 @@ function loop(ts) {
   if (gameState === State.PLAYING) {
     updatePlayer(dt);
     updateBullets(dt);
+    updateEnemyBullets(dt);
     updateEnemies(dt);
     resolveBulletEnemyCollisions();
+    resolveEnemyBulletPlayerCollisions();
     checkLevelClear();
     drawScene();
     drawHUD();
