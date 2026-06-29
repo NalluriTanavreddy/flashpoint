@@ -56,6 +56,14 @@ const ctx    = canvas.getContext('2d');
 canvas.width  = CANVAS_W;
 canvas.height = CANVAS_H;
 
+let canvasScale = 1;
+function updateCanvasScale() {
+  canvasScale = Math.min(window.innerWidth / CANVAS_W, window.innerHeight / CANVAS_H);
+  canvas.style.width  = (CANVAS_W * canvasScale) + 'px';
+  canvas.style.height = (CANVAS_H * canvasScale) + 'px';
+}
+window.addEventListener('resize', updateCanvasScale);
+
 const State = { START:'START', INTRO:'INTRO', PLAYING:'PLAYING', PAUSED:'PAUSED', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
 let gameState = State.START;
 
@@ -68,7 +76,8 @@ let introTimer       = 0;
 let mapJustExpanded  = false;
 const INTRO_DURATION = 1.6;
 let masterVolume     = 0.8;
-let difficulty       = 'normal';let volumeDragging   = false;
+let difficulty       = 'normal';
+let volumeDragging   = false;
 let streakCount      = 0;
 let streakTimer      = 0;
 const STREAK_WINDOW  = 2.0;
@@ -188,10 +197,18 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 const mouse = { x: CANVAS_W / 2, y: CANVAS_H / 2, fired: false };
-canvas.addEventListener('mousemove', e => {
+
+function clientToCanvas(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
-  mouse.x = e.clientX - r.left;
-  mouse.y = e.clientY - r.top;
+  return {
+    x: (clientX - r.left) * canvas.width  / r.width,
+    y: (clientY - r.top)  * canvas.height / r.height,
+  };
+}
+
+canvas.addEventListener('mousemove', e => {
+  const p = clientToCanvas(e.clientX, e.clientY);
+  mouse.x = p.x; mouse.y = p.y;
   // Drag volume thumb while pause menu is open
   if (volumeDragging && gameState === State.PAUSED) {
     const PW = 300, sX = Math.floor((CANVAS_W - PW) / 2) + 50, sW = PW - 100;
@@ -202,8 +219,7 @@ canvas.addEventListener('mousemove', e => {
 window.addEventListener('mouseup', () => { volumeDragging = false; });
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  const r  = canvas.getBoundingClientRect();
-  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const { x: mx, y: my } = clientToCanvas(e.clientX, e.clientY);
   if (gameState === State.PAUSED)  { handlePauseClick(mx, my); return; }
   if (gameState === State.PLAYING) {
     // Pause icon sits below HP pips in the top-right
@@ -214,6 +230,64 @@ canvas.addEventListener('mousedown', e => {
     mouse.fired = true;
   }
 });
+
+// Virtual joystick (left-half touch = move, right-half touch = aim + fire)
+const joystick = { active: false, baseX: 0, baseY: 0, dx: 0, dy: 0, id: -1 };
+const aimTouch = { active: false, id: -1 };
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const { x: cx, y: cy } = clientToCanvas(t.clientX, t.clientY);
+    if (cx < CANVAS_W / 2) {
+      if (!joystick.active) {
+        joystick.active = true;
+        joystick.baseX  = cx; joystick.baseY = cy;
+        joystick.dx     = 0;  joystick.dy    = 0;
+        joystick.id     = t.identifier;
+      }
+    } else {
+      if (!aimTouch.active) {
+        aimTouch.active = true;
+        aimTouch.id     = t.identifier;
+        mouse.x = cx; mouse.y = cy;
+        if (gameState === State.PAUSED)  { handlePauseClick(cx, cy); }
+        else if (gameState === State.PLAYING) { mouse.fired = true; }
+      }
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const { x: cx, y: cy } = clientToCanvas(t.clientX, t.clientY);
+    if (t.identifier === joystick.id) {
+      const DEAD = 10, MAX_R = 64;
+      const dx = cx - joystick.baseX, dy = cy - joystick.baseY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > DEAD) {
+        const ratio = Math.min(1, (dist - DEAD) / (MAX_R - DEAD));
+        joystick.dx = ratio * dx / dist;
+        joystick.dy = ratio * dy / dist;
+      } else {
+        joystick.dx = 0; joystick.dy = 0;
+      }
+    } else if (t.identifier === aimTouch.id) {
+      mouse.x = cx; mouse.y = cy;
+    }
+  }
+}, { passive: false });
+
+function endTouch(t) {
+  if (t.identifier === joystick.id) {
+    joystick.active = false; joystick.dx = 0; joystick.dy = 0; joystick.id = -1;
+  } else if (t.identifier === aimTouch.id) {
+    aimTouch.active = false; aimTouch.id = -1;
+  }
+}
+canvas.addEventListener('touchend',    e => { e.preventDefault(); for (const t of e.changedTouches) endTouch(t); }, { passive: false });
+canvas.addEventListener('touchcancel', e => { e.preventDefault(); for (const t of e.changedTouches) endTouch(t); }, { passive: false });
 
 function togglePause() {
   if      (gameState === State.PLAYING) gameState = State.PAUSED;
@@ -399,12 +473,13 @@ const player = {
 };
 
 function updatePlayer(dt) {
-  let dx = 0, dy = 0;
+  let dx = joystick.dx, dy = joystick.dy;
   if (keys['KeyW'] || keys['ArrowUp'])    dy -= 1;
   if (keys['KeyS'] || keys['ArrowDown'])  dy += 1;
   if (keys['KeyA'] || keys['ArrowLeft'])  dx -= 1;
   if (keys['KeyD'] || keys['ArrowRight']) dx += 1;
-  if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+  const len = Math.hypot(dx, dy);
+  if (len > 1) { dx /= len; dy /= len; }
   player.isMoving = dx !== 0 || dy !== 0;
   if (player.isMoving) player.walkTimer += dt * 5;
   player.x += dx * PLAYER_SPEED * dt;
@@ -843,6 +918,26 @@ function drawScene() {
   ctx.restore();
 }
 
+function drawJoystick() {
+  if (!joystick.active) return;
+  const OUTER = 64, INNER = 24;
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.beginPath();
+  ctx.arc(joystick.baseX, joystick.baseY, OUTER, 0, Math.PI * 2);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(joystick.baseX, joystick.baseY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.globalAlpha = 0.55;
+  const stickX = joystick.baseX + joystick.dx * OUTER;
+  const stickY = joystick.baseY + joystick.dy * OUTER;
+  ctx.beginPath();
+  ctx.arc(stickX, stickY, INNER, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.restore();
+}
+
 function drawHUD() {
   const PAD = 10;
   ctx.font = 'bold 15px Courier New'; ctx.textAlign = 'center'; ctx.fillStyle = '#ccc';
@@ -902,6 +997,7 @@ function drawHUD() {
   ctx.fillRect(piX, piY + 1, 4, 12);
   ctx.fillRect(piX + 7, piY + 1, 4, 12);
 
+  drawJoystick();
   drawMinimap();
 }
 
@@ -1037,6 +1133,7 @@ function beginLevel(level) {
   CANVAS_H         = h;
   canvas.width     = w;
   canvas.height    = h;
+  updateCanvasScale();
 
   hearts       = [];
   bullets      = [];
@@ -1249,6 +1346,7 @@ document.getElementById('btn-next-level').addEventListener('click', () => beginL
 
 refreshStartScreen();
 showScreen('start-screen');
+updateCanvasScale();
 ctx.fillStyle = '#27272b';
 ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(loop); });
