@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flashpoint</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Courier New', Courier, monospace;
+      color: #e0e0e0;
+    }
+
+    #canvas {
+      display: block;
+      background: #111;
+      cursor: crosshair;
+    }
+
+    /* ── Overlay screens ── */
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.82);
+      gap: 12px;
+    }
+    .screen.hidden { display: none; }
+
+    .screen h1 {
+      font-size: 3rem;
+      letter-spacing: 0.18em;
+      color: #ff4422;
+      text-shadow: 0 0 18px #ff4422aa;
+      margin-bottom: 8px;
+    }
+    .screen h2 {
+      font-size: 1.2rem;
+      letter-spacing: 0.08em;
+      color: #aaa;
+      margin-bottom: 20px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 32px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .stat-grid .label { color: #888; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; }
+    .stat-grid .value { color: #ff9955; font-size: 1.4rem; font-weight: bold; }
+
+    button {
+      padding: 12px 40px;
+      font-size: 1rem;
+      font-family: inherit;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      background: #ff4422;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+      transition: background 0.15s;
+    }
+    button:hover { background: #ff6644; }
+
+    #death-screen h1 { color: #cc2200; text-shadow: 0 0 18px #cc2200aa; }
+    #level-screen h1 { color: #22cc66; text-shadow: 0 0 18px #22cc66aa; }
+
+    .run-stats {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 20px;
+      color: #bbb;
+      font-size: 0.9rem;
+    }
+    .run-stats span { color: #ff9955; }
+  </style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<!-- ── Start Screen ── -->
+<div id="start-screen" class="screen">
+  <h1>FLASHPOINT</h1>
+  <h2>Top-Down Tactical Shooter</h2>
+  <div class="stat-grid">
+    <div>
+      <div class="label">High Score</div>
+      <div class="value" id="stat-hiscore">0</div>
+    </div>
+    <div>
+      <div class="label">Best Level</div>
+      <div class="value" id="stat-bestlevel">—</div>
+    </div>
+    <div>
+      <div class="label">Total Kills</div>
+      <div class="value" id="stat-kills">0</div>
+    </div>
+    <div>
+      <div class="label">Accuracy</div>
+      <div class="value" id="stat-accuracy">—</div>
+    </div>
+  </div>
+  <button id="btn-start">Play</button>
+</div>
+
+<!-- ── Death Screen ── -->
+<div id="death-screen" class="screen hidden">
+  <h1>YOU DIED</h1>
+  <div class="run-stats">
+    <div>Score: <span id="death-score">0</span></div>
+    <div>Level reached: <span id="death-level">1</span></div>
+    <div>Kills: <span id="death-kills">0</span></div>
+    <div>Accuracy: <span id="death-acc">0%</span></div>
+  </div>
+  <button id="btn-restart">Try Again</button>
+</div>
+
+<!-- ── Level Clear Screen ── -->
+<div id="level-screen" class="screen hidden">
+  <h1>LEVEL CLEAR</h1>
+  <div class="run-stats">
+    <div>Score: <span id="level-score">0</span></div>
+    <div>Time bonus: <span id="level-timebonus">0</span></div>
+    <div>Accuracy: <span id="level-acc">0%</span></div>
+  </div>
+  <button id="btn-next-level">Next Level</button>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
