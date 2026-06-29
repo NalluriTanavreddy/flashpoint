@@ -26,6 +26,14 @@ function mapSizeForLevel(level) {
   const tier = Math.min(Math.floor(level / 3), 3);
   return { w: 900 + tier * 150, h: 600 + tier * 100 };
 }
+// Gunner rate of fire tightens each level; floored at 0.9 s
+function gunnerShootInterval() {
+  return Math.max(0.9, 2.4 - (currentLevel - 1) * 0.12);
+}
+// Aim spread (half-angle in radians) shrinks each level; perfect aim at L15
+function gunnerAimSpread() {
+  return Math.max(0, 0.26 - (currentLevel - 1) * 0.019);
+}
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
@@ -477,7 +485,7 @@ function spawnEnemies(positions, level) {
   enemies = positions.map(([x, y], i) => ({
     x, y, hp: ENEMY_MAX_HP, angle: 0, flashTimer: 0, walkTimer: 0,
     isGunner:    i < gunners,
-    shootTimer:  GUNNER_SHOOT_INTERVAL * (0.5 + Math.random()),
+    shootTimer:  gunnerShootInterval() * (0.5 + Math.random()),
     meleeTimer:  0,
   }));
 }
@@ -501,8 +509,9 @@ function updateEnemies(dt) {
       if (e.shootTimer > 0) {
         e.shootTimer -= dt;
       } else if (dist < GUNNER_SHOOT_RANGE) {
-        e.shootTimer = GUNNER_SHOOT_INTERVAL + Math.random() * 0.6;
-        const a = Math.atan2(tdy, tdx);
+        e.shootTimer = gunnerShootInterval() + Math.random() * 0.4;
+        // Aim toward player with a spread that shrinks as levels increase
+        const a = Math.atan2(tdy, tdx) + (Math.random() * 2 - 1) * gunnerAimSpread();
         enemyBullets.push({
           x: e.x + Math.cos(a) * (ENEMY_R + 6),
           y: e.y + Math.sin(a) * (ENEMY_R + 6),
