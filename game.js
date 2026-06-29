@@ -26,13 +26,19 @@ function mapSizeForLevel(level) {
   const tier = Math.min(Math.floor(level / 3), 3);
   return { w: 900 + tier * 150, h: 600 + tier * 100 };
 }
+// Easy slows + widens gunners; Hard tightens both
+function _diffMult() {
+  if (difficulty === 'easy') return { interval: 1.35, spread: 1.6 };
+  if (difficulty === 'hard') return { interval: 0.75, spread: 0.55 };
+  return { interval: 1, spread: 1 };
+}
 // Gunner rate of fire tightens each level; floored at 0.9 s
 function gunnerShootInterval() {
-  return Math.max(0.9, 2.4 - (currentLevel - 1) * 0.12);
+  return Math.max(0.9, 2.4 - (currentLevel - 1) * 0.12) * _diffMult().interval;
 }
 // Aim spread (half-angle in radians) shrinks each level; perfect aim at L15
 function gunnerAimSpread() {
-  return Math.max(0, 0.26 - (currentLevel - 1) * 0.019);
+  return Math.max(0, 0.26 - (currentLevel - 1) * 0.019) * _diffMult().spread;
 }
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
@@ -42,7 +48,7 @@ canvas.width  = CANVAS_W;
 canvas.height = CANVAS_H;
 
 // ── State machine ─────────────────────────────────────────────────────────────
-const State = { START:'START', INTRO:'INTRO', PLAYING:'PLAYING', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
+const State = { START:'START', INTRO:'INTRO', PLAYING:'PLAYING', PAUSED:'PAUSED', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
 let gameState = State.START;
 
 // ── Level / run tracking ──────────────────────────────────────────────────────
@@ -54,6 +60,9 @@ let levelActive    = false;
 let introTimer       = 0;
 let mapJustExpanded  = false;
 const INTRO_DURATION = 1.6;
+let masterVolume     = 0.8;
+let difficulty       = 'normal';  // 'easy' | 'normal' | 'hard'
+let volumeDragging   = false;
 
 // ── Persistent stats ──────────────────────────────────────────────────────────
 function loadStats() {
@@ -121,8 +130,14 @@ function updateShake(dt) {
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
 let _ac = null;
+let masterGain = null;
 function ac() {
-  if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (!_ac) {
+    _ac = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = _ac.createGain();
+    masterGain.gain.value = masterVolume;
+    masterGain.connect(_ac.destination);
+  }
   if (_ac.state === 'suspended') _ac.resume();
   return _ac;
 }
@@ -134,7 +149,7 @@ function _tone(c, freq, t, dur, vol, type, freqEnd) {
   g.gain.setValueAtTime(0.001, t);
   g.gain.linearRampToValueAtTime(vol, t + dur * 0.04);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  osc.connect(g); g.connect(c.destination);
+  osc.connect(g); g.connect(masterGain);
   osc.start(t); osc.stop(t + dur + 0.01);
 }
 
@@ -147,7 +162,7 @@ function _noise(c, t, dur, vol) {
   src.buffer = buf;
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  src.connect(g); g.connect(c.destination);
+  src.connect(g); g.connect(masterGain);
   src.start(t);
 }
 
@@ -162,18 +177,81 @@ function sndDryFire()    { try { const c=ac(),t=c.currentTime; _tone(c,90,t,0.06
 
 // ── Input ─────────────────────────────────────────────────────────────────────
 const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true; });
-window.addEventListener('keyup',   e => { keys[e.code] = false; });
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Escape') togglePause();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 const mouse = { x: CANVAS_W / 2, y: CANVAS_H / 2, fired: false };
 canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
   mouse.x = e.clientX - r.left;
   mouse.y = e.clientY - r.top;
+  // Drag volume thumb while pause menu is open
+  if (volumeDragging && gameState === State.PAUSED) {
+    const PW = 300, sX = Math.floor((CANVAS_W - PW) / 2) + 50, sW = PW - 100;
+    masterVolume = Math.max(0, Math.min(1, (mouse.x - sX) / sW));
+    if (masterGain) masterGain.gain.value = masterVolume;
+  }
 });
+window.addEventListener('mouseup', () => { volumeDragging = false; });
 canvas.addEventListener('mousedown', e => {
-  if (e.button === 0 && gameState === State.PLAYING) mouse.fired = true;
+  if (e.button !== 0) return;
+  const r  = canvas.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  if (gameState === State.PAUSED)  { handlePauseClick(mx, my); return; }
+  if (gameState === State.PLAYING) {
+    // Pause icon sits below HP pips in the top-right
+    const piX = CANVAS_W - 28, piY = 30;
+    if (mx >= piX - 4 && mx <= piX + 16 && my >= piY && my <= piY + 16) {
+      togglePause(); return;
+    }
+    mouse.fired = true;
+  }
 });
+
+// ── Pause helpers ─────────────────────────────────────────────────────────────
+function togglePause() {
+  if      (gameState === State.PLAYING) gameState = State.PAUSED;
+  else if (gameState === State.PAUSED)  gameState = State.PLAYING;
+}
+
+function handlePauseClick(mx, my) {
+  const PW = 300, PH = 380;
+  const ox = Math.floor((CANVAS_W - PW) / 2);
+  const oy = Math.floor((CANVAS_H - PH) / 2);
+
+  // Volume slider
+  const sX = ox + 50, sY = oy + 96, sW = PW - 100;
+  if (mx >= sX - 10 && mx <= sX + sW + 10 && my >= sY - 12 && my <= sY + 12) {
+    volumeDragging = true;
+    masterVolume   = Math.max(0, Math.min(1, (mx - sX) / sW));
+    if (masterGain) masterGain.gain.value = masterVolume;
+    return;
+  }
+
+  // Difficulty buttons
+  const diffs = ['easy', 'normal', 'hard'];
+  const dbW = 78, dbH = 26, dbGap = 6;
+  const dtW = diffs.length * dbW + (diffs.length - 1) * dbGap;
+  const dSX = ox + PW / 2 - dtW / 2;
+  for (let i = 0; i < diffs.length; i++) {
+    const bx = dSX + i * (dbW + dbGap), by = oy + 150;
+    if (mx >= bx && mx <= bx + dbW && my >= by && my <= by + dbH) {
+      difficulty = diffs[i]; return;
+    }
+  }
+
+  // Action buttons: RESUME / RESTART / MAIN MENU
+  const abX = ox + 36, abW = PW - 72, abH = 34;
+  const abYs = [oy + 204, oy + 250, oy + 296];
+  if (mx >= abX && mx <= abX + abW) {
+    if (my >= abYs[0] && my < abYs[0] + abH) { gameState = State.PLAYING; }
+    if (my >= abYs[1] && my < abYs[1] + abH) { startGame(); }
+    if (my >= abYs[2] && my < abYs[2] + abH) { gameState = State.START; showScreen('start-screen'); refreshStartScreen(); }
+  }
+}
 
 // ── Containers ────────────────────────────────────────────────────────────────
 let containers = [];
@@ -848,6 +926,16 @@ function drawHUD() {
     ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.stroke();
   }
 
+  // Pause icon — two small bars below the HP label, top-right
+  const piX = CANVAS_W - 28, piY = 30;
+  ctx.fillStyle = '#3a3a3e';
+  ctx.fillRect(piX - 4, piY - 2, 20, 18);
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+  ctx.strokeRect(piX - 4, piY - 2, 20, 18);
+  ctx.fillStyle = '#777';
+  ctx.fillRect(piX, piY + 1, 4, 12);
+  ctx.fillRect(piX + 7, piY + 1, 4, 12);
+
   drawMinimap();
 }
 
@@ -1079,6 +1167,96 @@ function drawLevelIntro() {
   ctx.restore();
 }
 
+// ── Pause menu ────────────────────────────────────────────────────────────────
+function drawPauseMenu() {
+  const PW = 300, PH = 380;
+  const ox = Math.floor((CANVAS_W - PW) / 2);
+  const oy = Math.floor((CANVAS_H - PH) / 2);
+  const cx = ox + PW / 2;
+
+  // Dim backdrop
+  ctx.fillStyle = 'rgba(0,0,0,0.74)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Panel
+  ctx.fillStyle   = '#141418';
+  ctx.strokeStyle = '#3a3a44';
+  ctx.lineWidth   = 2;
+  ctx.fillRect(ox, oy, PW, PH);
+  ctx.strokeRect(ox, oy, PW, PH);
+
+  ctx.textAlign = 'center';
+
+  // Title
+  ctx.font      = 'bold 26px Courier New';
+  ctx.fillStyle = '#ff4422';
+  ctx.fillText('PAUSED', cx, oy + 42);
+
+  // ── Volume ──
+  ctx.font      = '11px Courier New';
+  ctx.fillStyle = '#666';
+  ctx.fillText('VOLUME', cx, oy + 78);
+
+  const sX = ox + 50, sY = oy + 96, sW = PW - 100;
+  ctx.fillStyle = '#252528';
+  ctx.fillRect(sX, sY - 3, sW, 6);
+  ctx.fillStyle = '#ff9955';
+  ctx.fillRect(sX, sY - 3, sW * masterVolume, 6);
+  const tX = sX + sW * masterVolume;
+  ctx.beginPath(); ctx.arc(tX, sY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font      = '10px Courier New';
+  ctx.fillStyle = '#555';
+  ctx.fillText(Math.round(masterVolume * 100) + '%', cx, oy + 118);
+
+  // ── Difficulty ──
+  ctx.font      = '11px Courier New';
+  ctx.fillStyle = '#666';
+  ctx.fillText('DIFFICULTY', cx, oy + 140);
+
+  const diffs  = ['easy', 'normal', 'hard'];
+  const dlbls  = ['EASY', 'NORMAL', 'HARD'];
+  const dbW = 78, dbH = 26, dbGap = 6;
+  const dtW = diffs.length * dbW + (diffs.length - 1) * dbGap;
+  const dSX = cx - dtW / 2;
+  diffs.forEach((d, i) => {
+    const bx = dSX + i * (dbW + dbGap), by = oy + 150;
+    const on = difficulty === d;
+    ctx.fillStyle   = on ? '#ff4422' : '#1e1e24';
+    ctx.strokeStyle = on ? '#ff6644' : '#333';
+    ctx.lineWidth   = 1.5;
+    ctx.fillRect(bx, by, dbW, dbH); ctx.strokeRect(bx, by, dbW, dbH);
+    ctx.font      = on ? 'bold 10px Courier New' : '10px Courier New';
+    ctx.fillStyle = on ? '#fff' : '#666';
+    ctx.fillText(dlbls[i], bx + dbW / 2, by + 17);
+  });
+
+  // Separator
+  ctx.strokeStyle = '#252528'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ox + 24, oy + 192); ctx.lineTo(ox + PW - 24, oy + 192);
+  ctx.stroke();
+
+  // ── Action buttons ──
+  const abX = ox + 36, abW = PW - 72, abH = 34;
+  [['RESUME', oy+204], ['RESTART', oy+250], ['MAIN MENU', oy+296]].forEach(([lbl, by]) => {
+    const hover = mouse.x > abX && mouse.x < abX + abW &&
+                  mouse.y > by  && mouse.y < by  + abH;
+    ctx.fillStyle   = hover ? '#ff4422' : '#1e1e24';
+    ctx.strokeStyle = hover ? '#ff6644' : '#333';
+    ctx.lineWidth   = 1.5;
+    ctx.fillRect(abX, by, abW, abH); ctx.strokeRect(abX, by, abW, abH);
+    ctx.font      = 'bold 13px Courier New';
+    ctx.fillStyle = hover ? '#fff' : '#bbb';
+    ctx.fillText(lbl, cx, by + 22);
+  });
+
+  // ESC hint
+  ctx.font = '10px Courier New'; ctx.fillStyle = '#333';
+  ctx.fillText('ESC  to resume', cx, oy + PH - 10);
+}
+
 // ── Game loop ─────────────────────────────────────────────────────────────────
 let lastTime = 0;
 function loop(ts) {
@@ -1094,6 +1272,8 @@ function loop(ts) {
     }
     updateParticles(dt); updatePopups(dt); updateShake(dt);
     drawScene(); drawHUD(); drawLevelIntro();
+  } else if (gameState === State.PAUSED) {
+    drawScene(); drawHUD(); drawPauseMenu();
   } else if (gameState === State.PLAYING) {
     updatePlayer(dt);
     updateBullets(dt);
