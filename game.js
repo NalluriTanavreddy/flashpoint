@@ -32,6 +32,18 @@ function _diffMult() {
   if (difficulty === 'hard') return { interval: 0.75, spread: 0.55 };
   return { interval: 1, spread: 1 };
 }
+// ×1 → ×2 → ×3 as kills chain within STREAK_WINDOW seconds
+function streakMult() {
+  if (streakCount >= 4) return 3;
+  if (streakCount >= 2) return 2;
+  return 1;
+}
+function updateStreak(dt) {
+  if (streakTimer > 0) {
+    streakTimer -= dt;
+    if (streakTimer <= 0) { streakCount = 0; streakTimer = 0; }
+  }
+}
 // Gunner rate of fire tightens each level; floored at 0.9 s
 function gunnerShootInterval() {
   return Math.max(0.9, 2.4 - (currentLevel - 1) * 0.12) * _diffMult().interval;
@@ -63,6 +75,9 @@ const INTRO_DURATION = 1.6;
 let masterVolume     = 0.8;
 let difficulty       = 'normal';  // 'easy' | 'normal' | 'hard'
 let volumeDragging   = false;
+let streakCount      = 0;
+let streakTimer      = 0;
+const STREAK_WINDOW  = 2.0;
 
 // ── Persistent stats ──────────────────────────────────────────────────────────
 function loadStats() {
@@ -640,10 +655,18 @@ function resolveBulletEnemyCollisions() {
         if (e.hp <= 0) {
           sndEnemyKill();
           session.kills++;
-          const pts = 100 * currentLevel;
-          runScore += pts;
+          const prevMult = streakMult();
+          streakCount++;
+          streakTimer = STREAK_WINDOW;
+          const mult = streakMult();
+          const pts  = 100 * currentLevel * mult;
+          runScore  += pts;
           player.ammo += AMMO_PER_KILL;
-          spawnPopup(e.x, e.y - 20, `+${pts}`);
+          spawnPopup(e.x, e.y - 20, `+${pts}`, mult > 1 ? '#ff9933' : '#ffe066');
+          if (mult > prevMult) {
+            spawnPopup(e.x, e.y - 52, `×${mult} STREAK!`, '#ff6600');
+            triggerShake(5, 0.14);
+          }
           // Kill burst
           spawnParticles(e.x, e.y, 14, '#cc2200', 130, 4);
           spawnParticles(e.x, e.y,  6, '#ff6633',  70, 2.5);
@@ -887,6 +910,14 @@ function drawHUD() {
   ctx.fillText(`LEVEL ${currentLevel}   ·   ENEMIES  ${enemies.length}`, CANVAS_W / 2, 24);
   ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9955';
   ctx.fillText(`SCORE  ${runScore}`, PAD, 24);
+  if (streakCount >= 2) {
+    const mult = streakMult();
+    const sc   = mult >= 3 ? '#ff4400' : '#ff8800';
+    ctx.font = 'bold 12px Courier New'; ctx.fillStyle = sc;
+    ctx.fillText(`×${mult} STREAK`, PAD, 40);
+    ctx.fillStyle = '#1a1a1a'; ctx.fillRect(PAD, 44, 68, 3);
+    ctx.fillStyle = sc;         ctx.fillRect(PAD, 44, 68 * (streakTimer / STREAK_WINDOW), 3);
+  }
   ctx.font = 'bold 18px Courier New'; ctx.textAlign = 'right';
   ctx.fillStyle = player.ammo > 0 ? '#ffe066' : '#ff4422';
   ctx.fillText(`AMMO  ${player.ammo}`, CANVAS_W - PAD, CANVAS_H - PAD);
@@ -1080,8 +1111,10 @@ function beginLevel(level) {
   canvas.width     = w;
   canvas.height    = h;
 
-  hearts            = [];
-  bullets           = [];
+  hearts       = [];
+  bullets      = [];
+  streakCount  = 0;
+  streakTimer  = 0;
   enemyBullets      = [];
   popups            = [];
   particles         = [];
@@ -1280,6 +1313,7 @@ function loop(ts) {
     updateEnemyBullets(dt);
     updateEnemies(dt);
     updateHearts(dt);
+    updateStreak(dt);
     resolveBulletEnemyCollisions();
     resolveEnemyBulletPlayerCollisions();
     resolveEnemyMeleePlayerCollisions();
