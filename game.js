@@ -122,24 +122,24 @@ function bulletHitsContainer(b, c) {
   return Math.abs(b.x - c.x) < h && Math.abs(b.y - c.y) < h;
 }
 
-function pushPlayerOutOfContainer(c) {
+function pushEntityOutOfContainer(ent, entR, c) {
   if (c.type === 'barrel') {
-    const dist = Math.hypot(player.x - c.x, player.y - c.y);
-    const minD = BARREL_R + PLAYER_R;
+    const dist = Math.hypot(ent.x - c.x, ent.y - c.y);
+    const minD = BARREL_R + entR;
     if (dist < minD && dist > 0.01) {
-      const a = Math.atan2(player.y - c.y, player.x - c.x);
-      player.x = c.x + Math.cos(a) * minD;
-      player.y = c.y + Math.sin(a) * minD;
+      const a = Math.atan2(ent.y - c.y, ent.x - c.x);
+      ent.x = c.x + Math.cos(a) * minD;
+      ent.y = c.y + Math.sin(a) * minD;
     }
     return;
   }
   // Crate AABB
-  const h = CRATE_SIZE / 2 + PLAYER_R;
-  const dx = player.x - c.x, dy = player.y - c.y;
+  const h = CRATE_SIZE / 2 + entR;
+  const dx = ent.x - c.x, dy = ent.y - c.y;
   if (Math.abs(dx) < h && Math.abs(dy) < h) {
     const ox = h - Math.abs(dx), oy = h - Math.abs(dy);
-    if (ox < oy) player.x += Math.sign(dx) * ox;
-    else         player.y += Math.sign(dy) * oy;
+    if (ox < oy) ent.x += Math.sign(dx) * ox;
+    else         ent.y += Math.sign(dy) * oy;
   }
 }
 
@@ -198,7 +198,7 @@ function updatePlayer(dt) {
   player.x = Math.max(PLAYER_R, Math.min(CANVAS_W - PLAYER_R, player.x));
   player.y = Math.max(PLAYER_R, Math.min(CANVAS_H - PLAYER_R, player.y));
   player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-  for (const c of containers) pushPlayerOutOfContainer(c);
+  for (const c of containers) pushEntityOutOfContainer(player, PLAYER_R, c);
 }
 
 function drawPlayer() {
@@ -267,6 +267,7 @@ function updateEnemies(dt) {
     }
     e.angle = Math.atan2(dy, dx);
     if (e.flashTimer > 0) e.flashTimer -= dt;
+    for (const c of containers) pushEntityOutOfContainer(e, ENEMY_R, c);
   }
 }
 
