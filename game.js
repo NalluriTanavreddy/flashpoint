@@ -29,7 +29,7 @@ canvas.width  = CANVAS_W;
 canvas.height = CANVAS_H;
 
 // ── State machine ─────────────────────────────────────────────────────────────
-const State = { START:'START', PLAYING:'PLAYING', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
+const State = { START:'START', INTRO:'INTRO', PLAYING:'PLAYING', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
 let gameState = State.START;
 
 // ── Level / run tracking ──────────────────────────────────────────────────────
@@ -38,6 +38,8 @@ let currentMaxHP   = PLAYER_MAX_HP;
 let runScore       = 0;
 let levelStartTime = 0;
 let levelActive    = false;
+let introTimer     = 0;
+const INTRO_DURATION = 1.6;
 
 // ── Persistent stats ──────────────────────────────────────────────────────────
 function loadStats() {
@@ -923,10 +925,11 @@ function beginLevel(level) {
   player.x        = sx;
   player.y        = sy;
 
-  levelStartTime = performance.now();
-  levelActive    = true;
   hideAllScreens();
-  gameState = State.PLAYING;
+  introTimer = INTRO_DURATION;
+  gameState  = State.INTRO;
+  // levelStartTime and levelActive are set when the intro finishes so
+  // the time bonus only ticks from when play actually begins
 }
 
 function startGame() {
@@ -938,12 +941,58 @@ function startGame() {
   beginLevel(1);
 }
 
+// ── Level intro overlay ───────────────────────────────────────────────────────
+function drawLevelIntro() {
+  const progress = 1 - introTimer / INTRO_DURATION;   // 0 → 1 over the duration
+  // fade in 0-17%, hold 17-61%, fade out 61-100%
+  let alpha;
+  if      (progress < 0.17) alpha = progress / 0.17;
+  else if (progress < 0.61) alpha = 1;
+  else                      alpha = 1 - (progress - 0.61) / 0.39;
+
+  ctx.save();
+  ctx.fillStyle = `rgba(0,0,0,${alpha * 0.55})`;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  ctx.globalAlpha = alpha;
+  ctx.textAlign   = 'center';
+
+  ctx.font        = 'bold 78px Courier New';
+  ctx.fillStyle   = '#ff4422';
+  ctx.shadowColor = '#ff4422';
+  ctx.shadowBlur  = 28;
+  ctx.fillText(`LEVEL ${currentLevel}`, CANVAS_W / 2, CANVAS_H / 2 - 8);
+
+  ctx.shadowBlur  = 0;
+  ctx.font        = '16px Courier New';
+  ctx.fillStyle   = '#aaa';
+  const total = enemyCountForLevel(currentLevel);
+  const guns  = gunnerCountForLevel(currentLevel);
+  const sub   = guns > 0
+    ? `${total} enemies  ·  ${guns} gunner${guns !== 1 ? 's' : ''}`
+    : `${total} enemies`;
+  ctx.fillText(sub, CANVAS_W / 2, CANVAS_H / 2 + 38);
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 // ── Game loop ─────────────────────────────────────────────────────────────────
 let lastTime = 0;
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
-  if (gameState === State.PLAYING) {
+  if (gameState === State.INTRO) {
+    introTimer -= dt;
+    mouse.fired = false;   // swallow clicks queued during the overlay
+    if (introTimer <= 0) {
+      gameState      = State.PLAYING;
+      levelStartTime = performance.now();
+      levelActive    = true;
+    }
+    updateParticles(dt); updatePopups(dt); updateShake(dt);
+    drawScene(); drawHUD(); drawLevelIntro();
+  } else if (gameState === State.PLAYING) {
     updatePlayer(dt);
     updateBullets(dt);
     updateEnemyBullets(dt);
