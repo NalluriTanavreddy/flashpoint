@@ -1,4 +1,3 @@
-// ── Constants ─────────────────────────────────────────────────────────────────
 let CANVAS_W        = 900;
 let CANVAS_H        = 600;
 const PLAYER_SPEED  = 180;
@@ -14,10 +13,9 @@ const CRATE_SIZE             = 42;
 const BARREL_R               = 18;
 const PLAYER_MAX_HP          = 3;
 const ENEMY_BULLET_SPEED     = 190;   // px/s — slower so cover is useful
-const GUNNER_SHOOT_RANGE     = 370;   // px
+const GUNNER_SHOOT_RANGE     = 370;
 const GUNNER_PREFERRED_DIST  = 215;   // px — gunners try to keep this gap
-const GUNNER_SHOOT_INTERVAL  = 2.4;   // seconds
-
+const GUNNER_SHOOT_INTERVAL  = 2.4;
 function enemyCountForLevel(level)  { return 1 + level * 2; }
 function gunnerCountForLevel(level) { return Math.max(0, level - 1); }
 function maxHPForLevel(level)       { return PLAYER_MAX_HP + (level - 1); }
@@ -53,17 +51,14 @@ function gunnerAimSpread() {
   return Math.max(0, 0.26 - (currentLevel - 1) * 0.019) * _diffMult().spread;
 }
 
-// ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
 canvas.width  = CANVAS_W;
 canvas.height = CANVAS_H;
 
-// ── State machine ─────────────────────────────────────────────────────────────
 const State = { START:'START', INTRO:'INTRO', PLAYING:'PLAYING', PAUSED:'PAUSED', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
 let gameState = State.START;
 
-// ── Level / run tracking ──────────────────────────────────────────────────────
 let currentLevel   = 1;
 let currentMaxHP   = PLAYER_MAX_HP;
 let runScore       = 0;
@@ -73,13 +68,11 @@ let introTimer       = 0;
 let mapJustExpanded  = false;
 const INTRO_DURATION = 1.6;
 let masterVolume     = 0.8;
-let difficulty       = 'normal';  // 'easy' | 'normal' | 'hard'
-let volumeDragging   = false;
+let difficulty       = 'normal';let volumeDragging   = false;
 let streakCount      = 0;
 let streakTimer      = 0;
 const STREAK_WINDOW  = 2.0;
 
-// ── Persistent stats ──────────────────────────────────────────────────────────
 function loadStats() {
   return {
     hiScore:    parseInt(localStorage.getItem('fp_hiScore')    || '0', 10),
@@ -102,7 +95,6 @@ function fmtAccuracy(hits, shots) {
 
 let session = { shots: 0, hits: 0, kills: 0 };
 
-// ── Particles ──────────────────────────────────────────────────────────────────
 let particles = [];
 
 function spawnParticles(x, y, count, col, speed, size) {
@@ -129,7 +121,6 @@ function drawParticles() {
   ctx.globalAlpha = 1;
 }
 
-// ── Screen shake ──────────────────────────────────────────────────────────────
 const shake = { ox: 0, oy: 0, mag: 0, duration: 0, elapsed: 0 };
 function triggerShake(mag, duration) {
   shake.mag = mag; shake.duration = duration; shake.elapsed = 0;
@@ -143,7 +134,6 @@ function updateShake(dt) {
   } else { shake.ox = 0; shake.oy = 0; }
 }
 
-// ── Audio ─────────────────────────────────────────────────────────────────────
 let _ac = null;
 let masterGain = null;
 function ac() {
@@ -190,7 +180,6 @@ function sndLevelClear() { try { const c=ac(),t=c.currentTime; _tone(c,440,t,0.1
 function sndDeath()      { try { const c=ac(),t=c.currentTime; _tone(c,220,t,0.14,0.24,'sawtooth',200); _tone(c,160,t+0.13,0.14,0.2,'sawtooth',140); _tone(c,90,t+0.26,0.28,0.18,'sawtooth',60); _noise(c,t,0.38,0.1); } catch(e){} }
 function sndDryFire()    { try { const c=ac(),t=c.currentTime; _tone(c,90,t,0.06,0.08,'square'); } catch(e){} }
 
-// ── Input ─────────────────────────────────────────────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -226,7 +215,6 @@ canvas.addEventListener('mousedown', e => {
   }
 });
 
-// ── Pause helpers ─────────────────────────────────────────────────────────────
 function togglePause() {
   if      (gameState === State.PLAYING) gameState = State.PAUSED;
   else if (gameState === State.PAUSED)  gameState = State.PLAYING;
@@ -237,7 +225,6 @@ function handlePauseClick(mx, my) {
   const ox = Math.floor((CANVAS_W - PW) / 2);
   const oy = Math.floor((CANVAS_H - PH) / 2);
 
-  // Volume slider
   const sX = ox + 50, sY = oy + 96, sW = PW - 100;
   if (mx >= sX - 10 && mx <= sX + sW + 10 && my >= sY - 12 && my <= sY + 12) {
     volumeDragging = true;
@@ -246,7 +233,6 @@ function handlePauseClick(mx, my) {
     return;
   }
 
-  // Difficulty buttons
   const diffs = ['easy', 'normal', 'hard'];
   const dbW = 78, dbH = 26, dbGap = 6;
   const dtW = diffs.length * dbW + (diffs.length - 1) * dbGap;
@@ -258,7 +244,6 @@ function handlePauseClick(mx, my) {
     }
   }
 
-  // Action buttons: RESUME / RESTART / MAIN MENU
   const abX = ox + 36, abW = PW - 72, abH = 34;
   const abYs = [oy + 204, oy + 250, oy + 296];
   if (mx >= abX && mx <= abX + abW) {
@@ -268,7 +253,6 @@ function handlePauseClick(mx, my) {
   }
 }
 
-// ── Containers ────────────────────────────────────────────────────────────────
 let containers = [];
 
 function tooCloseToAny(x, y, r, list) {
@@ -352,7 +336,6 @@ function drawContainers() {
   }
 }
 
-// ── Top-down person renderer ───────────────────────────────────────────────────
 // angle=0 faces RIGHT. We rotate so local -Y (head) points in facing direction.
 // walkTimer accumulates over time; isMoving controls whether legs swing.
 function drawTopDownPerson(x, y, angle, walkTimer, isMoving, bodyCol, headCol) {
@@ -364,46 +347,37 @@ function drawTopDownPerson(x, y, angle, walkTimer, isMoving, bodyCol, headCol) {
 
   const sw = isMoving ? Math.sin(walkTimer * 9) : 0;  // swing −1..1
 
-  // Foot positions (local: head at -Y, feet at +Y)
   const lFx = -2 - sw * 1.5, lFy = 15 - sw * 6;
   const rFx =  2 + sw * 1.5, rFy = 15 + sw * 6;
-  // Hand positions (arms swing opposite phase)
   const lHx = -14 + sw * 2, lHy = sw * 5;
   const rHx =  14 - sw * 2, rHy = -sw * 5;
 
-  // ── Shadow ──────────────────────────────────────────────────────
   ctx.beginPath();
   ctx.ellipse(0, 3, 13, 9, 0, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.fill();
 
-  // ── Legs (drawn behind torso) ────────────────────────────────────
   ctx.lineWidth = 4;
   ctx.strokeStyle = bodyCol;
   ctx.beginPath(); ctx.moveTo(-4, 8); ctx.lineTo(lFx, lFy); ctx.stroke();
   ctx.beginPath(); ctx.moveTo( 4, 8); ctx.lineTo(rFx, rFy); ctx.stroke();
-  // Feet — small dark ovals
   ctx.fillStyle = '#1a1a1a';
   ctx.beginPath(); ctx.ellipse(lFx, lFy, 4, 3, sw * 0.3, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(rFx, rFy, 4, 3, -sw * 0.3, 0, Math.PI * 2); ctx.fill();
 
-  // ── Torso ────────────────────────────────────────────────────────
   ctx.beginPath();
   ctx.ellipse(0, 1, 8, 11, 0, 0, Math.PI * 2);
   ctx.fillStyle = bodyCol;
   ctx.fill();
 
-  // ── Arms ─────────────────────────────────────────────────────────
   ctx.lineWidth = 3.5;
   ctx.strokeStyle = bodyCol;
   ctx.beginPath(); ctx.moveTo(-8, -2); ctx.lineTo(lHx, lHy); ctx.stroke();
   ctx.beginPath(); ctx.moveTo( 8, -2); ctx.lineTo(rHx, rHy); ctx.stroke();
-  // Hands
   ctx.fillStyle = headCol;
   ctx.beginPath(); ctx.arc(lHx, lHy, 3, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(rHx, rHy, 3, 0, Math.PI * 2); ctx.fill();
 
-  // ── Head ─────────────────────────────────────────────────────────
   ctx.beginPath();
   ctx.arc(0, -11, 8, 0, Math.PI * 2);
   ctx.fillStyle = headCol;
@@ -417,7 +391,6 @@ function drawTopDownPerson(x, y, angle, walkTimer, isMoving, bodyCol, headCol) {
   ctx.restore();
 }
 
-// ── Player ────────────────────────────────────────────────────────────────────
 const player = {
   x: CANVAS_W / 2, y: CANVAS_H / 2,
   angle: 0, ammo: START_AMMO,
@@ -457,13 +430,9 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(player.x, player.y);
   ctx.rotate(player.angle);
-  ctx.translate(6, 3); // offset to right-hand side
-  ctx.fillStyle = '#aaa';
-  ctx.fillRect(2, -2.5, 18, 5);   // barrel
-  ctx.fillStyle = '#777';
-  ctx.fillRect(2, -4,    9, 8);   // slide / grip block
-  // Muzzle flash
-  if (player.muzzleTimer > 0) {
+  ctx.translate(6, 3);  ctx.fillStyle = '#aaa';
+  ctx.fillRect(2, -2.5, 18, 5);  ctx.fillStyle = '#777';
+  ctx.fillRect(2, -4,    9, 8);  if (player.muzzleTimer > 0) {
     const tip = PLAYER_R + 22 - 6;
     ctx.beginPath(); ctx.arc(tip + 10, 0, 8, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,240,120,0.85)'; ctx.fill();
@@ -473,7 +442,6 @@ function drawPlayer() {
   ctx.restore();
 }
 
-// ── Bullets ───────────────────────────────────────────────────────────────────
 let bullets = [];
 
 function spawnBullet() {
@@ -515,7 +483,6 @@ function drawBullets() {
   }
 }
 
-// ── Enemy bullets ─────────────────────────────────────────────────────────────
 let enemyBullets = [];
 
 function updateEnemyBullets(dt) {
@@ -569,7 +536,6 @@ function drawEnemyBullets() {
   }
 }
 
-// ── Enemies ───────────────────────────────────────────────────────────────────
 let enemies = [];
 let hearts  = [];
 
@@ -588,17 +554,14 @@ function updateEnemies(dt) {
     const tdx = player.x - e.x, tdy = player.y - e.y;
     const dist = Math.hypot(tdx, tdy);
 
-    // Desired movement: toward player for rushers, distance-keeping for gunners
     let moveX = 0, moveY = 0;
     if (e.isGunner) {
       const diff = dist - GUNNER_PREFERRED_DIST;
       if (Math.abs(diff) > 20) {
-        // Move toward or away to maintain preferred standoff
         const sign = diff > 0 ? 1 : -1;
         moveX = (tdx / dist) * sign;
         moveY = (tdy / dist) * sign;
       }
-      // Gunner shooting
       if (e.shootTimer > 0) {
         e.shootTimer -= dt;
       } else if (dist < GUNNER_SHOOT_RANGE) {
@@ -613,7 +576,6 @@ function updateEnemies(dt) {
         });
       }
     } else {
-      // Rusher: charge straight at player
       if (dist > 1) { moveX = tdx / dist; moveY = tdy / dist; }
     }
 
@@ -667,7 +629,6 @@ function resolveBulletEnemyCollisions() {
             spawnPopup(e.x, e.y - 52, `×${mult} STREAK!`, '#ff6600');
             triggerShake(5, 0.14);
           }
-          // Kill burst
           spawnParticles(e.x, e.y, 14, '#cc2200', 130, 4);
           spawnParticles(e.x, e.y,  6, '#ff6633',  70, 2.5);
           // Gunners have a random chance to drop a heart
@@ -676,7 +637,6 @@ function resolveBulletEnemyCollisions() {
           }
         } else {
           sndEnemyHit();
-          // Hit sparks
           spawnParticles(e.x, e.y, 6, '#ff8844', 90, 3);
           liveEnemies.push(e);
         }
@@ -697,27 +657,22 @@ function drawEnemies() {
     const headCol = flash ? '#fff' : '#d4a97a';
     drawTopDownPerson(e.x, e.y, e.angle, e.walkTimer, true, bodyCol, headCol);
 
-    // Gunner carries a visible weapon
     if (e.isGunner) {
       ctx.save();
       ctx.translate(e.x, e.y);
       ctx.rotate(e.angle);
       ctx.translate(5, 4);
       ctx.fillStyle = flash ? '#fff' : '#888';
-      ctx.fillRect(2, -2, 20, 4);   // barrel
-      ctx.fillStyle = flash ? '#fff' : '#555';
-      ctx.fillRect(2, -3.5, 8, 7);  // grip
-      ctx.restore();
+      ctx.fillRect(2, -2, 20, 4);      ctx.fillStyle = flash ? '#fff' : '#555';
+      ctx.fillRect(2, -3.5, 8, 7);      ctx.restore();
     }
 
-    // HP bar
     const W = 34, H = 5, bx = e.x - W / 2, by = e.y - 44;
     ctx.fillStyle = '#400'; ctx.fillRect(bx, by, W, H);
     ctx.fillStyle = e.hp === ENEMY_MAX_HP ? '#4f4' : '#f84';
     ctx.fillRect(bx, by, W * (e.hp / ENEMY_MAX_HP), H);
     ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, W, H);
 
-    // [G] tag above gunner HP bar
     if (e.isGunner) {
       ctx.font = 'bold 9px Courier New'; ctx.textAlign = 'center';
       ctx.fillStyle = '#ff5533';
@@ -726,7 +681,6 @@ function drawEnemies() {
   }
 }
 
-// ── Hearts (HP pickups) ───────────────────────────────────────────────────────
 function updateHearts(dt) {
   for (const h of hearts) h.bob += dt * 2.8;
 }
@@ -760,15 +714,11 @@ function drawHearts() {
     const bob = Math.sin(h.bob) * 2.5;
     ctx.save();
     ctx.translate(h.x, h.y + bob);
-    // Glow halo
     heartPath(17);
     ctx.fillStyle = 'rgba(255,50,100,0.22)'; ctx.fill();
-    // Body
     heartPath(13);
     ctx.fillStyle = '#ff3366'; ctx.fill();
-    // Rim
     ctx.strokeStyle = '#cc1144'; ctx.lineWidth = 1; ctx.stroke();
-    // Highlight
     ctx.fillStyle = 'rgba(255,255,255,0.38)';
     ctx.beginPath();
     ctx.ellipse(-3, -3, 3, 2, -0.4, 0, Math.PI * 2);
@@ -777,7 +727,6 @@ function drawHearts() {
   }
 }
 
-// ── Player death ──────────────────────────────────────────────────────────────
 function triggerPlayerDeath() {
   if (gameState !== State.PLAYING) return;
   sndDeath();
@@ -798,7 +747,6 @@ function triggerPlayerDeath() {
   showScreen('death-screen');
 }
 
-// ── Level clear ───────────────────────────────────────────────────────────────
 function checkLevelClear() {
   if (!levelActive || enemies.length > 0) return;
   levelActive = false;
@@ -825,14 +773,11 @@ function checkLevelClear() {
   showScreen('level-screen');
 }
 
-// ── Floor (building top-down view) ────────────────────────────────────────────
 const TILE = 60;
 function drawFloor() {
-  // Concrete base
   ctx.fillStyle = '#27272b';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Alternating tile fill
   for (let tx = 0; tx * TILE < CANVAS_W; tx++) {
     for (let ty = 0; ty * TILE < CANVAS_H; ty++) {
       if ((tx + ty) % 2 === 0) {
@@ -842,7 +787,6 @@ function drawFloor() {
     }
   }
 
-  // Grout lines
   ctx.strokeStyle = '#1c1c1f';
   ctx.lineWidth   = 1;
   for (let x = 0; x <= CANVAS_W; x += TILE) {
@@ -852,17 +796,14 @@ function drawFloor() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke();
   }
 
-  // Room border wall
   ctx.strokeStyle = '#444448';
   ctx.lineWidth   = 10;
   ctx.strokeRect(5, 5, CANVAS_W - 10, CANVAS_H - 10);
-  // Inner wall highlight
   ctx.strokeStyle = '#5a5a60';
   ctx.lineWidth   = 2;
   ctx.strokeRect(10, 10, CANVAS_W - 20, CANVAS_H - 20);
 }
 
-// ── Score popups ──────────────────────────────────────────────────────────────
 let popups = [];
 
 function spawnPopup(x, y, text, col = '#ffe066') {
@@ -887,7 +828,6 @@ function drawPopups() {
   ctx.globalAlpha = 1;
 }
 
-// ── Draw scene ────────────────────────────────────────────────────────────────
 function drawScene() {
   ctx.save();
   ctx.translate(shake.ox, shake.oy);
@@ -903,7 +843,6 @@ function drawScene() {
   ctx.restore();
 }
 
-// ── HUD ───────────────────────────────────────────────────────────────────────
 function drawHUD() {
   const PAD = 10;
   ctx.font = 'bold 15px Courier New'; ctx.textAlign = 'center'; ctx.fillStyle = '#ccc';
@@ -929,7 +868,6 @@ function drawHUD() {
     ctx.fillStyle = i < player.ammo ? '#ffe066' : '#333'; ctx.fill();
     ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.stroke();
   }
-  // ACC/KILLS sits just above the minimap panel
   ctx.font = '11px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#555';
   ctx.fillText(`ACC ${fmtAccuracy(session.hits, session.shots)}  KILLS ${session.kills}`, 14, CANVAS_H - 14 - 100 - 6);
 
@@ -938,11 +876,9 @@ function drawHUD() {
   ctx.fillText('HP', CANVAS_W - PAD, 24);
   for (let i = 0; i < currentMaxHP; i++) {
     const px = CANVAS_W - PAD - 22 - i * 20, py = 18, R = 7;
-    // Empty background
     ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
     ctx.fillStyle = '#333'; ctx.fill();
     if (player.hp >= i + 1) {
-      // Full pip
       ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
       ctx.fillStyle = '#e44'; ctx.fill();
     } else if (player.hp >= i + 0.5) {
@@ -957,7 +893,6 @@ function drawHUD() {
     ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.stroke();
   }
 
-  // Pause icon — two small bars below the HP label, top-right
   const piX = CANVAS_W - 28, piY = 30;
   ctx.fillStyle = '#3a3a3e';
   ctx.fillRect(piX - 4, piY - 2, 20, 18);
@@ -970,7 +905,6 @@ function drawHUD() {
   drawMinimap();
 }
 
-// ── Minimap ───────────────────────────────────────────────────────────────────
 const MINIMAP_W   = 150;
 const MINIMAP_H   = 100;
 const MINIMAP_PAD = 14;
@@ -984,7 +918,6 @@ function drawMinimap() {
   ctx.save();
   ctx.translate(mx, my);
 
-  // Dark panel background
   ctx.fillStyle = 'rgba(0,0,0,0.72)';
   ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
   ctx.strokeStyle = '#3a3a3e';
@@ -996,7 +929,6 @@ function drawMinimap() {
   ctx.textAlign = 'left';
   ctx.fillText('RADAR', 4, 9);
 
-  // Containers — tiny shapes matching their in-world type
   for (const c of containers) {
     const cx = c.x * sx, cy = c.y * sy;
     if (c.type === 'barrel') {
@@ -1010,7 +942,6 @@ function drawMinimap() {
     }
   }
 
-  // Enemy blips — orange for gunners, red for rushers
   for (const e of enemies) {
     const ex = e.x * sx, ey = e.y * sy;
     ctx.beginPath();
@@ -1019,7 +950,6 @@ function drawMinimap() {
     ctx.fill();
   }
 
-  // Player — blue dot with a short facing line
   const px = player.x * sx, py = player.y * sy;
   ctx.strokeStyle = 'rgba(100,170,255,0.65)';
   ctx.lineWidth = 1;
@@ -1038,7 +968,6 @@ function drawMinimap() {
   ctx.restore();
 }
 
-// ── Screen helpers ─────────────────────────────────────────────────────────────
 function showScreen(id) {
   ['start-screen', 'death-screen', 'level-screen'].forEach(s =>
     document.getElementById(s).classList.toggle('hidden', s !== id));
@@ -1055,7 +984,6 @@ function refreshStartScreen() {
   document.getElementById('stat-accuracy').textContent  = fmtAccuracy(s.totalHits, s.totalShots);
 }
 
-// ── Randomised spawn generation ───────────────────────────────────────────────
 let playerSpawnPoints = [];
 let spawnIndex        = 0;   // cycles across deaths, never resets
 
@@ -1098,7 +1026,6 @@ function generatePlayerSpawnPoints(enemyPositions) {
   return pts;
 }
 
-// ── Begin level ───────────────────────────────────────────────────────────────
 function beginLevel(level) {
   currentLevel = level;
 
@@ -1137,7 +1064,6 @@ function beginLevel(level) {
   containers        = generateContainers(enemyPos);
   spawnEnemies(enemyPos, level);
 
-  // Place player at the current rotation slot
   const [sx, sy]  = playerSpawnPoints[spawnIndex % playerSpawnPoints.length];
   player.x        = sx;
   player.y        = sy;
@@ -1158,7 +1084,6 @@ function startGame() {
   beginLevel(1);
 }
 
-// ── Level intro overlay ───────────────────────────────────────────────────────
 function drawLevelIntro() {
   const progress = 1 - introTimer / INTRO_DURATION;   // 0 → 1 over the duration
   // fade in 0-17%, hold 17-61%, fade out 61-100%
@@ -1200,18 +1125,15 @@ function drawLevelIntro() {
   ctx.restore();
 }
 
-// ── Pause menu ────────────────────────────────────────────────────────────────
 function drawPauseMenu() {
   const PW = 300, PH = 380;
   const ox = Math.floor((CANVAS_W - PW) / 2);
   const oy = Math.floor((CANVAS_H - PH) / 2);
   const cx = ox + PW / 2;
 
-  // Dim backdrop
   ctx.fillStyle = 'rgba(0,0,0,0.74)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Panel
   ctx.fillStyle   = '#141418';
   ctx.strokeStyle = '#3a3a44';
   ctx.lineWidth   = 2;
@@ -1220,12 +1142,10 @@ function drawPauseMenu() {
 
   ctx.textAlign = 'center';
 
-  // Title
   ctx.font      = 'bold 26px Courier New';
   ctx.fillStyle = '#ff4422';
   ctx.fillText('PAUSED', cx, oy + 42);
 
-  // ── Volume ──
   ctx.font      = '11px Courier New';
   ctx.fillStyle = '#666';
   ctx.fillText('VOLUME', cx, oy + 78);
@@ -1243,7 +1163,6 @@ function drawPauseMenu() {
   ctx.fillStyle = '#555';
   ctx.fillText(Math.round(masterVolume * 100) + '%', cx, oy + 118);
 
-  // ── Difficulty ──
   ctx.font      = '11px Courier New';
   ctx.fillStyle = '#666';
   ctx.fillText('DIFFICULTY', cx, oy + 140);
@@ -1265,13 +1184,11 @@ function drawPauseMenu() {
     ctx.fillText(dlbls[i], bx + dbW / 2, by + 17);
   });
 
-  // Separator
   ctx.strokeStyle = '#252528'; ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(ox + 24, oy + 192); ctx.lineTo(ox + PW - 24, oy + 192);
   ctx.stroke();
 
-  // ── Action buttons ──
   const abX = ox + 36, abW = PW - 72, abH = 34;
   [['RESUME', oy+204], ['RESTART', oy+250], ['MAIN MENU', oy+296]].forEach(([lbl, by]) => {
     const hover = mouse.x > abX && mouse.x < abX + abW &&
@@ -1285,12 +1202,10 @@ function drawPauseMenu() {
     ctx.fillText(lbl, cx, by + 22);
   });
 
-  // ESC hint
   ctx.font = '10px Courier New'; ctx.fillStyle = '#333';
   ctx.fillText('ESC  to resume', cx, oy + PH - 10);
 }
 
-// ── Game loop ─────────────────────────────────────────────────────────────────
 let lastTime = 0;
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
@@ -1328,12 +1243,10 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
-// ── Button wiring ─────────────────────────────────────────────────────────────
 document.getElementById('btn-start').addEventListener('click',      () => startGame());
 document.getElementById('btn-restart').addEventListener('click',    () => startGame());
 document.getElementById('btn-next-level').addEventListener('click', () => beginLevel(currentLevel + 1));
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
 refreshStartScreen();
 showScreen('start-screen');
 ctx.fillStyle = '#27272b';
