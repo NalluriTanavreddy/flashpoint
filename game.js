@@ -10,8 +10,9 @@ const AMMO_PER_KILL = 3;
 const ENEMY_SPEED   = 58;
 const ENEMY_R       = 18;
 const ENEMY_MAX_HP  = 2;
+const CRATE_SIZE    = 42;   // square half-extent = 21
+const BARREL_R      = 18;
 
-// level N spawns 2N+1 enemies: L1=3, L2=5, L3=7 …
 function enemyCountForLevel(level) { return 1 + level * 2; }
 
 // ── Canvas setup ──────────────────────────────────────────────────────────────
@@ -21,19 +22,14 @@ canvas.width  = CANVAS_W;
 canvas.height = CANVAS_H;
 
 // ── Game state ────────────────────────────────────────────────────────────────
-const State = {
-  START:       'START',
-  PLAYING:     'PLAYING',
-  DEAD:        'DEAD',
-  LEVEL_CLEAR: 'LEVEL_CLEAR',
-};
+const State = { START:'START', PLAYING:'PLAYING', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
 let gameState = State.START;
 
 // ── Level & run tracking ──────────────────────────────────────────────────────
-let currentLevel    = 1;
-let runScore        = 0;
-let levelStartTime  = 0;   // performance.now() timestamp
-let levelActive     = false;
+let currentLevel   = 1;
+let runScore       = 0;
+let levelStartTime = 0;
+let levelActive    = false;
 
 // ── Persistent stats ──────────────────────────────────────────────────────────
 function loadStats() {
@@ -56,7 +52,6 @@ function fmtAccuracy(hits, shots) {
   return shots === 0 ? '—' : Math.round((hits / shots) * 100) + '%';
 }
 
-// ── Run session stats ──────────────────────────────────────────────────────────
 let session = { shots: 0, hits: 0, kills: 0 };
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -74,6 +69,120 @@ canvas.addEventListener('mousedown', e => {
   if (e.button === 0 && gameState === State.PLAYING) mouse.fired = true;
 });
 
+// ── Containers ────────────────────────────────────────────────────────────────
+let containers = [];
+
+function tooCloseToAny(x, y, clearR, list) {
+  for (const c of list) {
+    const cr = c.type === 'barrel' ? BARREL_R : CRATE_SIZE / 2;
+    if (Math.hypot(x - c.x, y - c.y) < clearR + cr + 14) return true;
+  }
+  return false;
+}
+
+function generateContainers(enemyPositions) {
+  const result   = [];
+  const MARGIN   = 52;
+  const COUNT    = 8;
+  const MAX_TRIES = 300;
+
+  for (let i = 0; i < COUNT; i++) {
+    for (let t = 0; t < MAX_TRIES; t++) {
+      const isBarrel = Math.random() < 0.4;
+      const cr = isBarrel ? BARREL_R : CRATE_SIZE / 2;
+      const x  = MARGIN + Math.random() * (CANVAS_W - MARGIN * 2);
+      const y  = MARGIN + Math.random() * (CANVAS_H - MARGIN * 2);
+
+      // Clear of player spawn (centre)
+      if (Math.hypot(x - CANVAS_W / 2, y - CANVAS_H / 2) < 90) continue;
+
+      // Clear of enemy spawns
+      let blocked = false;
+      for (const [ex, ey] of enemyPositions) {
+        if (Math.hypot(x - ex, y - ey) < 64) { blocked = true; break; }
+      }
+      if (blocked) continue;
+
+      // Clear of existing containers
+      if (tooCloseToAny(x, y, cr, result)) continue;
+
+      result.push({ type: isBarrel ? 'barrel' : 'crate', x, y });
+      break;
+    }
+  }
+  return result;
+}
+
+// ── Container collision helpers ───────────────────────────────────────────────
+function bulletHitsContainer(b, c) {
+  if (c.type === 'barrel') {
+    return Math.hypot(b.x - c.x, b.y - c.y) < BARREL_R + BULLET_R;
+  }
+  const h = CRATE_SIZE / 2 + BULLET_R;
+  return Math.abs(b.x - c.x) < h && Math.abs(b.y - c.y) < h;
+}
+
+function pushPlayerOutOfContainer(c) {
+  if (c.type === 'barrel') {
+    const dist = Math.hypot(player.x - c.x, player.y - c.y);
+    const minD = BARREL_R + PLAYER_R;
+    if (dist < minD && dist > 0.01) {
+      const a = Math.atan2(player.y - c.y, player.x - c.x);
+      player.x = c.x + Math.cos(a) * minD;
+      player.y = c.y + Math.sin(a) * minD;
+    }
+    return;
+  }
+  // Crate AABB
+  const h = CRATE_SIZE / 2 + PLAYER_R;
+  const dx = player.x - c.x, dy = player.y - c.y;
+  if (Math.abs(dx) < h && Math.abs(dy) < h) {
+    const ox = h - Math.abs(dx), oy = h - Math.abs(dy);
+    if (ox < oy) player.x += Math.sign(dx) * ox;
+    else         player.y += Math.sign(dy) * oy;
+  }
+}
+
+function drawContainers() {
+  for (const c of containers) {
+    if (c.type === 'barrel') {
+      // Outer ring
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, BARREL_R, 0, Math.PI * 2);
+      ctx.fillStyle   = '#c85a00';
+      ctx.strokeStyle = '#7a3800';
+      ctx.lineWidth   = 2.5;
+      ctx.fill(); ctx.stroke();
+      // Inner highlight band
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, BARREL_R * 0.55, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ff8c20';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+      // Centre dot
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff8c20'; ctx.fill();
+    } else {
+      const h = CRATE_SIZE / 2;
+      // Main fill
+      ctx.fillStyle = '#2a6b2a';
+      ctx.fillRect(c.x - h, c.y - h, CRATE_SIZE, CRATE_SIZE);
+      // Border
+      ctx.strokeStyle = '#1a4a1a';
+      ctx.lineWidth   = 2.5;
+      ctx.strokeRect(c.x - h, c.y - h, CRATE_SIZE, CRATE_SIZE);
+      // Cross detail
+      ctx.strokeStyle = '#3a8a3a';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(c.x - h + 4, c.y); ctx.lineTo(c.x + h - 4, c.y);
+      ctx.moveTo(c.x, c.y - h + 4); ctx.lineTo(c.x, c.y + h - 4);
+      ctx.stroke();
+    }
+  }
+}
+
 // ── Player ────────────────────────────────────────────────────────────────────
 const player = { x: CANVAS_W / 2, y: CANVAS_H / 2, angle: 0, ammo: START_AMMO };
 
@@ -89,22 +198,19 @@ function updatePlayer(dt) {
   player.x = Math.max(PLAYER_R, Math.min(CANVAS_W - PLAYER_R, player.x));
   player.y = Math.max(PLAYER_R, Math.min(CANVAS_H - PLAYER_R, player.y));
   player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+  for (const c of containers) pushPlayerOutOfContainer(c);
 }
 
 function drawPlayer() {
   const { x, y, angle } = player;
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  ctx.beginPath();
-  ctx.arc(0, 0, PLAYER_R, 0, Math.PI * 2);
+  ctx.translate(x, y); ctx.rotate(angle);
+  ctx.beginPath(); ctx.arc(0, 0, PLAYER_R, 0, Math.PI * 2);
   ctx.fillStyle = '#4af'; ctx.strokeStyle = '#8cf'; ctx.lineWidth = 2;
   ctx.fill(); ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(PLAYER_R, 0); ctx.lineTo(PLAYER_R + 14, 0);
+  ctx.beginPath(); ctx.moveTo(PLAYER_R, 0); ctx.lineTo(PLAYER_R + 14, 0);
   ctx.strokeStyle = '#cef'; ctx.lineWidth = 3; ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(4, 0, 4, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(4, 0, 4, 0, Math.PI * 2);
   ctx.fillStyle = '#8df'; ctx.fill();
   ctx.restore();
 }
@@ -114,12 +220,11 @@ let bullets = [];
 
 function spawnBullet() {
   if (player.ammo <= 0) return;
-  player.ammo--;
-  session.shots++;
+  player.ammo--; session.shots++;
   const tip = PLAYER_R + 14;
   bullets.push({
-    x:  player.x + Math.cos(player.angle) * tip,
-    y:  player.y + Math.sin(player.angle) * tip,
+    x: player.x + Math.cos(player.angle) * tip,
+    y: player.y + Math.sin(player.angle) * tip,
     vx: Math.cos(player.angle) * BULLET_SPEED,
     vy: Math.sin(player.angle) * BULLET_SPEED,
   });
@@ -128,19 +233,19 @@ function spawnBullet() {
 function updateBullets(dt) {
   if (mouse.fired) { mouse.fired = false; spawnBullet(); }
   for (const b of bullets) { b.x += b.vx * dt; b.y += b.vy * dt; }
-  bullets = bullets.filter(b =>
-    b.x > -BULLET_R && b.x < CANVAS_W + BULLET_R &&
-    b.y > -BULLET_R && b.y < CANVAS_H + BULLET_R
-  );
+  bullets = bullets.filter(b => {
+    if (b.x < -BULLET_R || b.x > CANVAS_W + BULLET_R ||
+        b.y < -BULLET_R || b.y > CANVAS_H + BULLET_R) return false;
+    for (const c of containers) if (bulletHitsContainer(b, c)) return false;
+    return true;
+  });
 }
 
 function drawBullets() {
   for (const b of bullets) {
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, BULLET_R, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(b.x, b.y, BULLET_R, 0, Math.PI * 2);
     ctx.fillStyle = '#ffe066'; ctx.fill();
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, BULLET_R + 2, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(b.x, b.y, BULLET_R + 2, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(255,220,80,0.35)'; ctx.lineWidth = 2; ctx.stroke();
   }
 }
@@ -167,32 +272,20 @@ function updateEnemies(dt) {
 
 function resolveBulletEnemyCollisions() {
   const liveBullets = [], liveEnemies = [], hitEnemies = new Set();
-
   for (const b of bullets) {
     let hit = false;
     for (const e of enemies) {
       if (!hitEnemies.has(e) && Math.hypot(b.x - e.x, b.y - e.y) < ENEMY_R + BULLET_R) {
-        hit = true;
-        hitEnemies.add(e);
-        e.hp--;
-        e.flashTimer = 0.12;
-        session.hits++;
-        if (e.hp <= 0) {
-          session.kills++;
-          runScore += 100;
-          player.ammo += AMMO_PER_KILL;
-        } else {
-          liveEnemies.push(e);
-        }
+        hit = true; hitEnemies.add(e);
+        e.hp--; e.flashTimer = 0.12; session.hits++;
+        if (e.hp <= 0) { session.kills++; runScore += 100; player.ammo += AMMO_PER_KILL; }
+        else           { liveEnemies.push(e); }
         break;
       }
     }
     if (!hit) liveBullets.push(b);
   }
-  for (const e of enemies) {
-    if (!hitEnemies.has(e)) liveEnemies.push(e);
-  }
-
+  for (const e of enemies) { if (!hitEnemies.has(e)) liveEnemies.push(e); }
   bullets = liveBullets;
   enemies = liveEnemies;
 }
@@ -201,8 +294,7 @@ function drawStickFigure(e) {
   const flash = e.flashTimer > 0;
   const col   = flash ? '#fff' : (e.hp === ENEMY_MAX_HP ? '#e44' : '#f96');
   ctx.save();
-  ctx.translate(e.x, e.y);
-  ctx.rotate(e.angle);
+  ctx.translate(e.x, e.y); ctx.rotate(e.angle);
   ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.arc(0, -14, 7, 0, Math.PI * 2);
   ctx.fillStyle = col; ctx.fill(); ctx.stroke();
@@ -227,29 +319,20 @@ function drawEnemies() {
   for (const e of enemies) { drawStickFigure(e); drawEnemyHPBar(e); }
 }
 
-// ── Level clear detection ─────────────────────────────────────────────────────
+// ── Level clear ───────────────────────────────────────────────────────────────
 function checkLevelClear() {
   if (!levelActive || enemies.length > 0) return;
   levelActive = false;
   gameState   = State.LEVEL_CLEAR;
-
   const elapsed   = (performance.now() - levelStartTime) / 1000;
   const timeBonus = Math.max(0, Math.round(500 - elapsed * 20));
-  const accBonus  = session.shots > 0
-    ? Math.round((session.hits / session.shots) * 200)
-    : 0;
+  const accBonus  = session.shots > 0 ? Math.round((session.hits / session.shots) * 200) : 0;
   runScore += timeBonus + accBonus;
-
-  // Persist best level
   const saved = loadStats();
-  if (currentLevel > saved.bestLevel) {
-    saved.bestLevel = currentLevel;
-    saveStats(saved);
-  }
-
-  document.getElementById('level-score').textContent    = runScore;
+  if (currentLevel > saved.bestLevel) { saved.bestLevel = currentLevel; saveStats(saved); }
+  document.getElementById('level-score').textContent     = runScore;
   document.getElementById('level-timebonus').textContent = `+${timeBonus}`;
-  document.getElementById('level-acc').textContent      = fmtAccuracy(session.hits, session.shots);
+  document.getElementById('level-acc').textContent       = fmtAccuracy(session.hits, session.shots);
   showScreen('level-screen');
 }
 
@@ -264,26 +347,22 @@ function drawScene() {
   for (let gy = 0; gy < CANVAS_H; gy += GRID) {
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CANVAS_W, gy); ctx.stroke();
   }
-  drawBullets(); drawEnemies(); drawPlayer();
+  drawContainers();
+  drawBullets();
+  drawEnemies();
+  drawPlayer();
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
 function drawHUD() {
   const PAD = 10;
-
-  // Level + enemies remaining — top centre
   ctx.font = 'bold 15px Courier New'; ctx.textAlign = 'center'; ctx.fillStyle = '#ccc';
   ctx.fillText(`LEVEL ${currentLevel}   ·   ENEMIES  ${enemies.length}`, CANVAS_W / 2, 24);
-
-  // Score — top left
   ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9955';
   ctx.fillText(`SCORE  ${runScore}`, PAD, 24);
-
-  // Ammo — bottom right
   ctx.font = 'bold 18px Courier New'; ctx.textAlign = 'right';
   ctx.fillStyle = player.ammo > 0 ? '#ffe066' : '#ff4422';
   ctx.fillText(`AMMO  ${player.ammo}`, CANVAS_W - PAD, CANVAS_H - PAD);
-
   const maxPips = START_AMMO + 12;
   for (let i = 0; i < maxPips; i++) {
     const px = CANVAS_W - PAD - 12 - i * 12;
@@ -292,8 +371,6 @@ function drawHUD() {
     ctx.fillStyle = i < player.ammo ? '#ffe066' : '#333'; ctx.fill();
     ctx.strokeStyle = '#555'; ctx.lineWidth = 1; ctx.stroke();
   }
-
-  // Accuracy — bottom left
   ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#777';
   ctx.fillText(`ACC  ${fmtAccuracy(session.hits, session.shots)}   KILLS  ${session.kills}`, PAD, CANVAS_H - PAD);
 }
@@ -307,7 +384,6 @@ function hideAllScreens() {
   ['start-screen', 'death-screen', 'level-screen'].forEach(s =>
     document.getElementById(s).classList.add('hidden'));
 }
-
 function refreshStartScreen() {
   const s = loadStats();
   document.getElementById('stat-hiscore').textContent   = s.hiScore;
@@ -316,28 +392,29 @@ function refreshStartScreen() {
   document.getElementById('stat-accuracy').textContent  = fmtAccuracy(s.totalHits, s.totalShots);
 }
 
-// ── Fixed spawn positions (randomised in a later commit) ──────────────────────
+// ── Fixed enemy spawn pool (randomised in a later commit) ─────────────────────
 const FIXED_SPAWNS = [
   [150, 100], [750, 100], [150, 480],
   [750, 480], [450,  80], [200, 300],
   [700, 300], [450, 500], [100, 500],
 ];
-
 function spawnPositionsForLevel(level) {
-  const count = enemyCountForLevel(level);
-  return FIXED_SPAWNS.slice(0, count);
+  return FIXED_SPAWNS.slice(0, enemyCountForLevel(level));
 }
 
-// ── Start / next-level init ───────────────────────────────────────────────────
+// ── Begin level ───────────────────────────────────────────────────────────────
 function beginLevel(level) {
   currentLevel = level;
   bullets      = [];
   player.x     = CANVAS_W / 2;
   player.y     = CANVAS_H / 2;
   player.angle = 0;
-  // Carry ammo into next level but top up to START_AMMO if lower
   if (level === 1) player.ammo = START_AMMO;
-  spawnEnemies(spawnPositionsForLevel(level));
+
+  const enemyPos = spawnPositionsForLevel(level);
+  containers     = generateContainers(enemyPos);
+  spawnEnemies(enemyPos);
+
   levelStartTime = performance.now();
   levelActive    = true;
   hideAllScreens();
@@ -345,8 +422,8 @@ function beginLevel(level) {
 }
 
 function startGame() {
-  runScore = 0;
-  session  = { shots: 0, hits: 0, kills: 0 };
+  runScore    = 0;
+  session     = { shots: 0, hits: 0, kills: 0 };
   player.ammo = START_AMMO;
   beginLevel(1);
 }
@@ -356,7 +433,6 @@ let lastTime = 0;
 function loop(ts) {
   const dt = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts;
-
   if (gameState === State.PLAYING) {
     updatePlayer(dt);
     updateBullets(dt);
@@ -366,7 +442,6 @@ function loop(ts) {
     drawScene();
     drawHUD();
   }
-
   requestAnimationFrame(loop);
 }
 
