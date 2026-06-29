@@ -60,6 +60,47 @@ function fmtAccuracy(hits, shots) {
 
 let session = { shots: 0, hits: 0, kills: 0 };
 
+// ── Particles ──────────────────────────────────────────────────────────────────
+let particles = [];
+
+function spawnParticles(x, y, count, col, speed, size) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = speed * (0.4 + Math.random() * 0.9);
+    particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, col, size: size*(0.5+Math.random()*0.8) });
+  }
+}
+function updateParticles(dt) {
+  particles = particles.filter(p => {
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.86;     p.vy *= 0.86;
+    p.life -= dt * 2.8;
+    return p.life > 0;
+  });
+}
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life * p.life;
+    ctx.fillStyle   = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── Screen shake ──────────────────────────────────────────────────────────────
+const shake = { ox: 0, oy: 0, mag: 0, duration: 0, elapsed: 0 };
+function triggerShake(mag, duration) {
+  shake.mag = mag; shake.duration = duration; shake.elapsed = 0;
+}
+function updateShake(dt) {
+  if (shake.elapsed < shake.duration) {
+    shake.elapsed += dt;
+    const t  = 1 - shake.elapsed / shake.duration;
+    shake.ox = (Math.random() - 0.5) * shake.mag * t;
+    shake.oy = (Math.random() - 0.5) * shake.mag * t;
+  } else { shake.ox = 0; shake.oy = 0; }
+}
+
 // ── Input ─────────────────────────────────────────────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => { keys[e.code] = true; });
@@ -229,7 +270,7 @@ const player = {
   x: CANVAS_W / 2, y: CANVAS_H / 2,
   angle: 0, ammo: START_AMMO,
   walkTimer: 0, isMoving: false,
-  hp: PLAYER_MAX_HP, flashTimer: 0,
+  hp: PLAYER_MAX_HP, flashTimer: 0, muzzleTimer: 0,
 };
 
 function updatePlayer(dt) {
@@ -248,6 +289,7 @@ function updatePlayer(dt) {
   player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
   for (const c of containers) pushEntityOutOfContainer(player, PLAYER_R, c);
   if (player.flashTimer > 0) player.flashTimer -= dt;
+  if (player.muzzleTimer > 0) player.muzzleTimer -= dt;
 }
 
 function drawPlayer() {
@@ -268,6 +310,14 @@ function drawPlayer() {
   ctx.fillRect(2, -2.5, 18, 5);   // barrel
   ctx.fillStyle = '#777';
   ctx.fillRect(2, -4,    9, 8);   // slide / grip block
+  // Muzzle flash
+  if (player.muzzleTimer > 0) {
+    const tip = PLAYER_R + 22 - 6;
+    ctx.beginPath(); ctx.arc(tip + 10, 0, 8, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,240,120,0.85)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(tip + 10, 0, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -277,7 +327,13 @@ let bullets = [];
 function spawnBullet() {
   if (player.ammo <= 0) return;
   player.ammo--; session.shots++;
+  player.muzzleTimer = 0.07;
   const tip = PLAYER_R + 22;
+  spawnParticles(
+    player.x + Math.cos(player.angle) * tip,
+    player.y + Math.sin(player.angle) * tip,
+    5, '#ffe899', 90, 2.5
+  );
   bullets.push({
     x:  player.x + Math.cos(player.angle) * tip,
     y:  player.y + Math.sin(player.angle) * tip,
@@ -325,6 +381,8 @@ function resolveEnemyBulletPlayerCollisions() {
     if (Math.hypot(b.x - player.x, b.y - player.y) < PLAYER_R + BULLET_R) {
       player.hp--;
       player.flashTimer = 0.18;
+      triggerShake(7, 0.22);
+      spawnParticles(player.x, player.y, 8, '#4488ff', 80, 3);
       if (player.hp <= 0) triggerPlayerDeath();
       return false;
     }
@@ -339,7 +397,9 @@ function resolveEnemyMeleePlayerCollisions() {
     if (Math.hypot(player.x - e.x, player.y - e.y) < PLAYER_R + ENEMY_R) {
       player.hp        -= 0.5;
       player.flashTimer = 0.22;
-      e.meleeTimer      = 0.85;   // 850 ms cooldown per knife
+      e.meleeTimer      = 0.85;
+      triggerShake(5, 0.18);
+      spawnParticles(player.x, player.y, 6, '#ff3333', 70, 2.5);
       if (player.hp <= 0) triggerPlayerDeath();
     }
   }
@@ -441,7 +501,14 @@ function resolveBulletEnemyCollisions() {
           runScore += pts;
           player.ammo += AMMO_PER_KILL;
           spawnPopup(e.x, e.y - 20, `+${pts}`);
-        } else { liveEnemies.push(e); }
+          // Kill burst
+          spawnParticles(e.x, e.y, 14, '#cc2200', 130, 4);
+          spawnParticles(e.x, e.y,  6, '#ff6633',  70, 2.5);
+        } else {
+          // Hit sparks
+          spawnParticles(e.x, e.y, 6, '#ff8844', 90, 3);
+          liveEnemies.push(e);
+        }
         break;
       }
     }
@@ -598,13 +665,17 @@ function drawPopups() {
 
 // ── Draw scene ────────────────────────────────────────────────────────────────
 function drawScene() {
+  ctx.save();
+  ctx.translate(shake.ox, shake.oy);
   drawFloor();
   drawContainers();
+  drawParticles();
   drawBullets();
   drawEnemyBullets();
   drawEnemies();
   drawPlayer();
   drawPopups();
+  ctx.restore();
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
@@ -719,6 +790,7 @@ function beginLevel(level) {
   bullets           = [];
   enemyBullets      = [];
   popups            = [];
+  particles         = [];
   player.angle      = 0;
   player.walkTimer  = 0;
   player.isMoving   = false;
@@ -762,7 +834,9 @@ function loop(ts) {
     resolveBulletEnemyCollisions();
     resolveEnemyBulletPlayerCollisions();
     resolveEnemyMeleePlayerCollisions();
+    updateParticles(dt);
     updatePopups(dt);
+    updateShake(dt);
     checkLevelClear();
     drawScene();
     drawHUD();
