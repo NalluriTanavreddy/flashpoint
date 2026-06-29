@@ -332,6 +332,19 @@ function resolveEnemyBulletPlayerCollisions() {
   });
 }
 
+function resolveEnemyMeleePlayerCollisions() {
+  if (gameState !== State.PLAYING) return;
+  for (const e of enemies) {
+    if (e.isGunner || e.meleeTimer > 0) continue;
+    if (Math.hypot(player.x - e.x, player.y - e.y) < PLAYER_R + ENEMY_R) {
+      player.hp        -= 0.5;
+      player.flashTimer = 0.22;
+      e.meleeTimer      = 0.85;   // 850 ms cooldown per knife
+      if (player.hp <= 0) triggerPlayerDeath();
+    }
+  }
+}
+
 function drawEnemyBullets() {
   for (const b of enemyBullets) {
     ctx.beginPath(); ctx.arc(b.x, b.y, BULLET_R - 1, 0, Math.PI * 2);
@@ -348,8 +361,9 @@ function spawnEnemies(positions, level) {
   const gunners = gunnerCountForLevel(level);
   enemies = positions.map(([x, y], i) => ({
     x, y, hp: ENEMY_MAX_HP, angle: 0, flashTimer: 0, walkTimer: 0,
-    isGunner:   i < gunners,
-    shootTimer: GUNNER_SHOOT_INTERVAL * (0.5 + Math.random()),
+    isGunner:    i < gunners,
+    shootTimer:  GUNNER_SHOOT_INTERVAL * (0.5 + Math.random()),
+    meleeTimer:  0,
   }));
 }
 
@@ -408,6 +422,7 @@ function updateEnemies(dt) {
 
     e.angle = Math.atan2(tdy, tdx);
     if (e.flashTimer > 0) e.flashTimer -= dt;
+    if (e.meleeTimer  > 0) e.meleeTimer  -= dt;
     for (const c of containers) pushEntityOutOfContainer(e, ENEMY_R, c);
   }
 }
@@ -572,15 +587,28 @@ function drawHUD() {
   ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#777';
   ctx.fillText(`ACC  ${fmtAccuracy(session.hits, session.shots)}   KILLS  ${session.kills}`, PAD, CANVAS_H - PAD);
 
-  // HP pips — top right
+  // HP pips — top right (supports half-pips from knife damage)
   ctx.font = 'bold 12px Courier New'; ctx.textAlign = 'right'; ctx.fillStyle = '#e44';
   ctx.fillText('HP', CANVAS_W - PAD, 24);
   for (let i = 0; i < PLAYER_MAX_HP; i++) {
-    const px = CANVAS_W - PAD - 22 - i * 20;
-    ctx.beginPath(); ctx.arc(px, 18, 7, 0, Math.PI * 2);
-    ctx.fillStyle   = i < player.hp ? '#e44' : '#333';
-    ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
-    ctx.fill(); ctx.stroke();
+    const px = CANVAS_W - PAD - 22 - i * 20, py = 18, R = 7;
+    // Empty background
+    ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
+    ctx.fillStyle = '#333'; ctx.fill();
+    if (player.hp >= i + 1) {
+      // Full pip
+      ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
+      ctx.fillStyle = '#e44'; ctx.fill();
+    } else if (player.hp >= i + 0.5) {
+      // Half pip — fill left half via clip
+      ctx.save();
+      ctx.beginPath(); ctx.rect(px - R, py - R, R, R * 2); ctx.clip();
+      ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
+      ctx.fillStyle = '#f84'; ctx.fill();
+      ctx.restore();
+    }
+    ctx.beginPath(); ctx.arc(px, py, R, 0, Math.PI * 2);
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.stroke();
   }
 }
 
@@ -652,6 +680,7 @@ function loop(ts) {
     updateEnemies(dt);
     resolveBulletEnemyCollisions();
     resolveEnemyBulletPlayerCollisions();
+    resolveEnemyMeleePlayerCollisions();
     checkLevelClear();
     drawScene();
     drawHUD();
