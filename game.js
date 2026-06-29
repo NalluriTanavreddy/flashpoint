@@ -488,6 +488,7 @@ function triggerPlayerDeath() {
   if (gameState !== State.PLAYING) return;
   levelActive = false;
   gameState   = State.DEAD;
+  spawnIndex++;   // next run uses the next spawn point in the rotation
   const saved = loadStats();
   saved.totalKills += session.kills;
   saved.totalShots += session.shots;
@@ -629,14 +630,47 @@ function refreshStartScreen() {
   document.getElementById('stat-accuracy').textContent  = fmtAccuracy(s.totalHits, s.totalShots);
 }
 
-// ── Fixed enemy spawn pool (randomised in a later commit) ─────────────────────
-const FIXED_SPAWNS = [
-  [150, 100], [750, 100], [150, 480],
-  [750, 480], [450,  80], [200, 300],
-  [700, 300], [450, 500], [100, 500],
-];
-function spawnPositionsForLevel(level) {
-  return FIXED_SPAWNS.slice(0, enemyCountForLevel(level));
+// ── Randomised spawn generation ───────────────────────────────────────────────
+let playerSpawnPoints = [];
+let spawnIndex        = 0;   // cycles across deaths, never resets
+
+function generateEnemyPositions(count) {
+  const result = [], MARGIN = 70, MAX_TRIES = 300;
+  for (let i = 0; i < count; i++) {
+    for (let t = 0; t < MAX_TRIES; t++) {
+      const x = MARGIN + Math.random() * (CANVAS_W - MARGIN * 2);
+      const y = MARGIN + Math.random() * (CANVAS_H - MARGIN * 2);
+      // Keep away from map centre (initial player spawn fallback)
+      if (Math.hypot(x - CANVAS_W / 2, y - CANVAS_H / 2) < 130) continue;
+      let ok = true;
+      for (const [ex, ey] of result) {
+        if (Math.hypot(x - ex, y - ey) < 110) { ok = false; break; }
+      }
+      if (ok) { result.push([x, y]); break; }
+    }
+  }
+  return result;
+}
+
+function generatePlayerSpawnPoints(enemyPositions) {
+  const pts = [], MARGIN = 55, MIN_DIST = 95, MAX_TRIES = 300;
+  for (let i = 0; i < 5; i++) {
+    for (let t = 0; t < MAX_TRIES; t++) {
+      const x = MARGIN + Math.random() * (CANVAS_W - MARGIN * 2);
+      const y = MARGIN + Math.random() * (CANVAS_H - MARGIN * 2);
+      let ok = true;
+      for (const [ex, ey] of enemyPositions) {
+        if (Math.hypot(x - ex, y - ey) < 120) { ok = false; break; }
+      }
+      for (const [px, py] of pts) {
+        if (Math.hypot(x - px, y - py) < MIN_DIST) { ok = false; break; }
+      }
+      if (ok) { pts.push([x, y]); break; }
+    }
+    // Fallback so we always get 5 points
+    if (pts.length <= i) pts.push([CANVAS_W / 2, CANVAS_H / 2]);
+  }
+  return pts;
 }
 
 // ── Begin level ───────────────────────────────────────────────────────────────
@@ -644,16 +678,22 @@ function beginLevel(level) {
   currentLevel      = level;
   bullets           = [];
   enemyBullets      = [];
-  player.x          = CANVAS_W / 2;
-  player.y          = CANVAS_H / 2;
   player.angle      = 0;
   player.walkTimer  = 0;
   player.isMoving   = false;
   player.flashTimer = 0;
   if (level === 1) { player.ammo = START_AMMO; player.hp = PLAYER_MAX_HP; }
-  const enemyPos = spawnPositionsForLevel(level);
-  containers     = generateContainers(enemyPos);
+
+  const enemyPos    = generateEnemyPositions(enemyCountForLevel(level));
+  playerSpawnPoints = generatePlayerSpawnPoints(enemyPos);
+  containers        = generateContainers(enemyPos);
   spawnEnemies(enemyPos, level);
+
+  // Place player at the current rotation slot
+  const [sx, sy]  = playerSpawnPoints[spawnIndex % playerSpawnPoints.length];
+  player.x        = sx;
+  player.y        = sy;
+
   levelStartTime = performance.now();
   levelActive    = true;
   hideAllScreens();
