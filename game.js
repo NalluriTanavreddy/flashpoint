@@ -1,15 +1,18 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CANVAS_W      = 900;
 const CANVAS_H      = 600;
-const PLAYER_SPEED  = 180;   // px/s
+const PLAYER_SPEED  = 180;
 const PLAYER_R      = 12;
-const BULLET_SPEED  = 520;   // px/s
+const BULLET_SPEED  = 520;
 const BULLET_R      = 4;
 const START_AMMO    = 7;
 const AMMO_PER_KILL = 3;
-const ENEMY_SPEED   = 58;    // px/s
-const ENEMY_R       = 18;    // collision radius
+const ENEMY_SPEED   = 58;
+const ENEMY_R       = 18;
 const ENEMY_MAX_HP  = 2;
+
+// level N spawns 2N+1 enemies: L1=3, L2=5, L3=7 …
+function enemyCountForLevel(level) { return 1 + level * 2; }
 
 // ── Canvas setup ──────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
@@ -25,6 +28,12 @@ const State = {
   LEVEL_CLEAR: 'LEVEL_CLEAR',
 };
 let gameState = State.START;
+
+// ── Level & run tracking ──────────────────────────────────────────────────────
+let currentLevel    = 1;
+let runScore        = 0;
+let levelStartTime  = 0;   // performance.now() timestamp
+let levelActive     = false;
 
 // ── Persistent stats ──────────────────────────────────────────────────────────
 function loadStats() {
@@ -145,9 +154,7 @@ function spawnEnemies(positions) {
 
 function updateEnemies(dt) {
   for (const e of enemies) {
-    // Walk toward player
-    const dx = player.x - e.x;
-    const dy = player.y - e.y;
+    const dx = player.x - e.x, dy = player.y - e.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 1) {
       e.x += (dx / dist) * ENEMY_SPEED * dt;
@@ -158,23 +165,21 @@ function updateEnemies(dt) {
   }
 }
 
-// Bullet ↔ enemy collisions; returns kill count this frame
 function resolveBulletEnemyCollisions() {
-  let kills = 0;
-  const liveBullets  = [];
-  const liveEnemies  = [];
+  const liveBullets = [], liveEnemies = [], hitEnemies = new Set();
 
   for (const b of bullets) {
     let hit = false;
     for (const e of enemies) {
-      if (Math.hypot(b.x - e.x, b.y - e.y) < ENEMY_R + BULLET_R) {
+      if (!hitEnemies.has(e) && Math.hypot(b.x - e.x, b.y - e.y) < ENEMY_R + BULLET_R) {
         hit = true;
+        hitEnemies.add(e);
         e.hp--;
         e.flashTimer = 0.12;
         session.hits++;
         if (e.hp <= 0) {
-          kills++;
           session.kills++;
+          runScore += 100;
           player.ammo += AMMO_PER_KILL;
         } else {
           liveEnemies.push(e);
@@ -182,81 +187,75 @@ function resolveBulletEnemyCollisions() {
         break;
       }
     }
-    // Keep enemies that weren't just killed (avoid double-push)
     if (!hit) liveBullets.push(b);
   }
-
-  // Survivors = enemies never hit this frame + enemies hit but still alive
-  // (liveEnemies already has the hurt-but-alive ones; add untouched ones)
-  const hitSet = new Set(liveEnemies);
   for (const e of enemies) {
-    if (e.hp > 0 && !hitSet.has(e)) liveEnemies.push(e);
+    if (!hitEnemies.has(e)) liveEnemies.push(e);
   }
 
   bullets = liveBullets;
   enemies = liveEnemies;
-  return kills;
 }
 
 function drawStickFigure(e) {
   const flash = e.flashTimer > 0;
   const col   = flash ? '#fff' : (e.hp === ENEMY_MAX_HP ? '#e44' : '#f96');
-
   ctx.save();
   ctx.translate(e.x, e.y);
   ctx.rotate(e.angle);
-  ctx.strokeStyle = col;
-  ctx.lineWidth   = 2.5;
-  ctx.lineCap     = 'round';
-
-  // Head
-  ctx.beginPath();
-  ctx.arc(0, -14, 7, 0, Math.PI * 2);
+  ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(0, -14, 7, 0, Math.PI * 2);
   ctx.fillStyle = col; ctx.fill(); ctx.stroke();
-
-  // Body
-  ctx.beginPath();
-  ctx.moveTo(0, -7); ctx.lineTo(0, 8); ctx.stroke();
-
-  // Arms
-  ctx.beginPath();
-  ctx.moveTo(-9, -2); ctx.lineTo(9, -2); ctx.stroke();
-
-  // Legs
+  ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(0, 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-9, -2); ctx.lineTo(9, -2); ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(0, 8); ctx.lineTo(-7, 20);
   ctx.moveTo(0, 8); ctx.lineTo(7,  20);
   ctx.stroke();
-
   ctx.restore();
 }
 
 function drawEnemyHPBar(e) {
-  const W = 34, H = 5;
-  const bx = e.x - W / 2;
-  const by = e.y - 36;
-
-  ctx.fillStyle = '#400';
-  ctx.fillRect(bx, by, W, H);
-
+  const W = 34, H = 5, bx = e.x - W / 2, by = e.y - 36;
+  ctx.fillStyle = '#400'; ctx.fillRect(bx, by, W, H);
   ctx.fillStyle = e.hp === ENEMY_MAX_HP ? '#4f4' : '#f84';
   ctx.fillRect(bx, by, W * (e.hp / ENEMY_MAX_HP), H);
-
-  ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
-  ctx.strokeRect(bx, by, W, H);
+  ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, W, H);
 }
 
 function drawEnemies() {
-  for (const e of enemies) {
-    drawStickFigure(e);
-    drawEnemyHPBar(e);
+  for (const e of enemies) { drawStickFigure(e); drawEnemyHPBar(e); }
+}
+
+// ── Level clear detection ─────────────────────────────────────────────────────
+function checkLevelClear() {
+  if (!levelActive || enemies.length > 0) return;
+  levelActive = false;
+  gameState   = State.LEVEL_CLEAR;
+
+  const elapsed   = (performance.now() - levelStartTime) / 1000;
+  const timeBonus = Math.max(0, Math.round(500 - elapsed * 20));
+  const accBonus  = session.shots > 0
+    ? Math.round((session.hits / session.shots) * 200)
+    : 0;
+  runScore += timeBonus + accBonus;
+
+  // Persist best level
+  const saved = loadStats();
+  if (currentLevel > saved.bestLevel) {
+    saved.bestLevel = currentLevel;
+    saveStats(saved);
   }
+
+  document.getElementById('level-score').textContent    = runScore;
+  document.getElementById('level-timebonus').textContent = `+${timeBonus}`;
+  document.getElementById('level-acc').textContent      = fmtAccuracy(session.hits, session.shots);
+  showScreen('level-screen');
 }
 
 // ── Draw scene ────────────────────────────────────────────────────────────────
 function drawScene() {
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.strokeStyle = '#252525'; ctx.lineWidth = 1;
   const GRID = 60;
   for (let gx = 0; gx < CANVAS_W; gx += GRID) {
@@ -265,19 +264,20 @@ function drawScene() {
   for (let gy = 0; gy < CANVAS_H; gy += GRID) {
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CANVAS_W, gy); ctx.stroke();
   }
-  drawBullets();
-  drawEnemies();
-  drawPlayer();
+  drawBullets(); drawEnemies(); drawPlayer();
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
 function drawHUD() {
   const PAD = 10;
 
-  // Kills remaining — top centre
-  ctx.font = 'bold 15px Courier New'; ctx.textAlign = 'center';
-  ctx.fillStyle = '#ccc';
-  ctx.fillText(`ENEMIES  ${enemies.length}`, CANVAS_W / 2, 24);
+  // Level + enemies remaining — top centre
+  ctx.font = 'bold 15px Courier New'; ctx.textAlign = 'center'; ctx.fillStyle = '#ccc';
+  ctx.fillText(`LEVEL ${currentLevel}   ·   ENEMIES  ${enemies.length}`, CANVAS_W / 2, 24);
+
+  // Score — top left
+  ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9955';
+  ctx.fillText(`SCORE  ${runScore}`, PAD, 24);
 
   // Ammo — bottom right
   ctx.font = 'bold 18px Courier New'; ctx.textAlign = 'right';
@@ -316,6 +316,41 @@ function refreshStartScreen() {
   document.getElementById('stat-accuracy').textContent  = fmtAccuracy(s.totalHits, s.totalShots);
 }
 
+// ── Fixed spawn positions (randomised in a later commit) ──────────────────────
+const FIXED_SPAWNS = [
+  [150, 100], [750, 100], [150, 480],
+  [750, 480], [450,  80], [200, 300],
+  [700, 300], [450, 500], [100, 500],
+];
+
+function spawnPositionsForLevel(level) {
+  const count = enemyCountForLevel(level);
+  return FIXED_SPAWNS.slice(0, count);
+}
+
+// ── Start / next-level init ───────────────────────────────────────────────────
+function beginLevel(level) {
+  currentLevel = level;
+  bullets      = [];
+  player.x     = CANVAS_W / 2;
+  player.y     = CANVAS_H / 2;
+  player.angle = 0;
+  // Carry ammo into next level but top up to START_AMMO if lower
+  if (level === 1) player.ammo = START_AMMO;
+  spawnEnemies(spawnPositionsForLevel(level));
+  levelStartTime = performance.now();
+  levelActive    = true;
+  hideAllScreens();
+  gameState = State.PLAYING;
+}
+
+function startGame() {
+  runScore = 0;
+  session  = { shots: 0, hits: 0, kills: 0 };
+  player.ammo = START_AMMO;
+  beginLevel(1);
+}
+
 // ── Game loop ─────────────────────────────────────────────────────────────────
 let lastTime = 0;
 function loop(ts) {
@@ -327,6 +362,7 @@ function loop(ts) {
     updateBullets(dt);
     updateEnemies(dt);
     resolveBulletEnemyCollisions();
+    checkLevelClear();
     drawScene();
     drawHUD();
   }
@@ -334,25 +370,10 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
-// ── Fixed spawn positions for now (randomised in a later commit) ──────────────
-const FIXED_SPAWNS = [
-  [150, 100], [750, 100], [150, 480], [750, 480], [450, 120],
-];
-
-function startGame() {
-  player.x = CANVAS_W / 2; player.y = CANVAS_H / 2;
-  player.angle = 0; player.ammo = START_AMMO;
-  bullets = [];
-  session = { shots: 0, hits: 0, kills: 0 };
-  spawnEnemies(FIXED_SPAWNS.slice(0, 3));  // 3 enemies for level 1
-  hideAllScreens();
-  gameState = State.PLAYING;
-}
-
 // ── Button wiring ─────────────────────────────────────────────────────────────
 document.getElementById('btn-start').addEventListener('click',      () => startGame());
 document.getElementById('btn-restart').addEventListener('click',    () => startGame());
-document.getElementById('btn-next-level').addEventListener('click', () => startGame());
+document.getElementById('btn-next-level').addEventListener('click', () => beginLevel(currentLevel + 1));
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 refreshStartScreen();
