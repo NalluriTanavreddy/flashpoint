@@ -306,15 +306,39 @@ function spawnEnemies(positions) {
 
 function updateEnemies(dt) {
   for (const e of enemies) {
-    const dx = player.x - e.x, dy = player.y - e.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 1) {
-      e.x += (dx / dist) * ENEMY_SPEED * dt;
-      e.y += (dy / dist) * ENEMY_SPEED * dt;
+    const tdx = player.x - e.x, tdy = player.y - e.y;
+    const dist = Math.hypot(tdx, tdy);
+
+    // Base attraction toward player (unit vector)
+    let moveX = dist > 1 ? tdx / dist : 0;
+    let moveY = dist > 1 ? tdy / dist : 0;
+
+    // Repulsion force from nearby containers — steers around obstacles
+    for (const c of containers) {
+      const cdx = e.x - c.x, cdy = e.y - c.y;
+      const cdist = Math.hypot(cdx, cdy);
+      const cr      = (c.type === 'barrel' ? BARREL_R : CRATE_SIZE / 2) + ENEMY_R;
+      const detectR = cr + 42; // awareness radius beyond contact
+      if (cdist < detectR && cdist > 0.01) {
+        // Strength rises steeply as enemy approaches the container surface
+        const t = (detectR - cdist) / detectR;
+        const strength = t * t * 2.6;
+        moveX += (cdx / cdist) * strength;
+        moveY += (cdy / cdist) * strength;
+      }
+    }
+
+    // Normalise combined vector and move
+    const moveLen = Math.hypot(moveX, moveY);
+    if (moveLen > 0.01 && dist > 1) {
+      e.x += (moveX / moveLen) * ENEMY_SPEED * dt;
+      e.y += (moveY / moveLen) * ENEMY_SPEED * dt;
       e.walkTimer += dt * 5;
     }
-    e.angle = Math.atan2(dy, dx);
+
+    e.angle = Math.atan2(tdy, tdx); // always face the player
     if (e.flashTimer > 0) e.flashTimer -= dt;
+    // Safety push-out in case of overlap after steering
     for (const c of containers) pushEntityOutOfContainer(e, ENEMY_R, c);
   }
 }
