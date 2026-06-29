@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600">
+<defs>
+  <pattern id="fl3" x="0" y="0" width="120" height="120" patternUnits="userSpaceOnUse">
+    <rect width="120" height="120" fill="#27272b"/>
+    <rect x="1" y="1" width="58" height="58" fill="#fff" fill-opacity="0.028"/>
+    <rect x="62" y="62" width="58" height="58" fill="#fff" fill-opacity="0.028"/>
+    <line x1="0"  y1="0"  x2="0"   y2="120" stroke="#1c1c1f" stroke-width="1"/>
+    <line x1="60" y1="0"  x2="60"  y2="120" stroke="#1c1c1f" stroke-width="1"/>
+    <line x1="0"  y1="0"  x2="120" y2="0"   stroke="#1c1c1f" stroke-width="1"/>
+    <line x1="0"  y1="60" x2="120" y2="60"  stroke="#1c1c1f" stroke-width="1"/>
+  </pattern>
+</defs>
+
+<!-- Game scene visible underneath -->
+<rect width="900" height="600" fill="url(#fl3)"/>
+<rect x="5"   y="5"   width="890" height="590" fill="none" stroke="#444448" stroke-width="10"/>
+<rect x="10"  y="10"  width="880" height="580" fill="none" stroke="#5a5a60" stroke-width="2"/>
+
+<!-- Muted containers hinting at the arena -->
+<rect x="179" y="159" width="42" height="42" fill="#2a6b2a" fill-opacity="0.35" stroke="#1a4a1a" stroke-width="2"/>
+<rect x="639" y="339" width="42" height="42" fill="#2a6b2a" fill-opacity="0.35" stroke="#1a4a1a" stroke-width="2"/>
+<circle cx="420" cy="450" r="18" fill="#c85a00" fill-opacity="0.35"/>
+<circle cx="570" cy="205" r="18" fill="#c85a00" fill-opacity="0.35"/>
+
+<!-- Muted enemy silhouettes hinting at the spawn -->
+<ellipse cx="160" cy="410" rx="11" ry="8" fill="#991111" fill-opacity="0.22" transform="rotate(-19, 160, 410)"/>
+<circle  cx="170" cy="406" r="8" fill="#d4a97a" fill-opacity="0.15"/>
+<ellipse cx="720" cy="155" rx="11" ry="8" fill="#cc6622" fill-opacity="0.22" transform="rotate(150, 720, 155)"/>
+<circle  cx="710" cy="161" r="8" fill="#d4a97a" fill-opacity="0.15"/>
+<ellipse cx="680" cy="490" rx="11" ry="8" fill="#991111" fill-opacity="0.22" transform="rotate(217, 680, 490)"/>
+<circle  cx="671" cy="483" r="8" fill="#d4a97a" fill-opacity="0.15"/>
+
+<!-- Dark vignette overlay -->
+<rect width="900" height="600" fill="#000" fill-opacity="0.60"/>
+
+<!-- Glow aura behind title -->
+<ellipse cx="450" cy="290" rx="330" ry="72" fill="#ff4422" fill-opacity="0.07"/>
+
+<!-- LEVEL 3 main title -->
+<text x="450" y="300" text-anchor="middle"
+      fill="#ff4422" font-family="'Courier New',monospace" font-size="82" font-weight="bold"
+      letter-spacing="0.08em">LEVEL 3</text>
+
+<!-- Divider -->
+<line x1="240" y1="320" x2="660" y2="320" stroke="#ff4422" stroke-opacity="0.30" stroke-width="1"/>
+
+<!-- Enemy count subtitle -->
+<text x="450" y="350" text-anchor="middle"
+      fill="#aaaaaa" font-family="'Courier New',monospace" font-size="16">7 enemies   ·   2 gunners</text>
+
+<!-- Arena expansion announcement (fires at L3, L6, L9) -->
+<text x="450" y="380" text-anchor="middle"
+      fill="#44ff88" font-family="'Courier New',monospace" font-size="13" font-weight="bold">— arena expanded —</text>
+
+<!-- Minimap still visible in corner -->
+<rect x="14" y="486" width="150" height="100" fill="#000" fill-opacity="0.65" stroke="#3a3a3e" stroke-width="1"/>
+<text x="18" y="495" fill="#3a3a3e" font-family="'Courier New',monospace" font-size="8">RADAR</text>
+<circle cx="89" cy="539" r="3" fill="#4488ff" stroke="#fff" stroke-width="0.8"/>
+
+<!-- HUD still rendered: score top-left -->
+<text x="10" y="24" fill="#ff9955" font-family="'Courier New',monospace" font-size="13" font-weight="bold">SCORE  3200</text>
+
+<!-- Level · enemies centre -->
+<text x="450" y="24" text-anchor="middle"
+      fill="#cccccc" font-family="'Courier New',monospace" font-size="15" font-weight="bold">LEVEL 3   ·   ENEMIES  7</text>
+
+<!-- HP pips top-right -->
+<text x="890" y="24" text-anchor="end" fill="#ee4444" font-family="'Courier New',monospace" font-size="12" font-weight="bold">HP</text>
+<circle cx="866" cy="18" r="7" fill="#ee4444" stroke="#666" stroke-width="1"/>
+<circle cx="846" cy="18" r="7" fill="#ee4444" stroke="#666" stroke-width="1"/>
+<circle cx="826" cy="18" r="7" fill="#ee4444" stroke="#666" stroke-width="1"/>
+<circle cx="806" cy="18" r="7" fill="#333"    stroke="#666" stroke-width="1"/>
+
+<!-- Ammo bottom-right -->
+<text x="890" y="590" text-anchor="end"
+      fill="#ffe066" font-family="'Courier New',monospace" font-size="18" font-weight="bold">AMMO  7</text>
+</svg>
