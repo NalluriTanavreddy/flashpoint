@@ -10,22 +10,22 @@ const AMMO_PER_KILL = 3;
 const ENEMY_SPEED   = 58;
 const ENEMY_R       = 18;
 const ENEMY_MAX_HP  = 2;
-const CRATE_SIZE    = 42;   // square half-extent = 21
+const CRATE_SIZE    = 42;
 const BARREL_R      = 18;
 
 function enemyCountForLevel(level) { return 1 + level * 2; }
 
-// ── Canvas setup ──────────────────────────────────────────────────────────────
+// ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
 canvas.width  = CANVAS_W;
 canvas.height = CANVAS_H;
 
-// ── Game state ────────────────────────────────────────────────────────────────
+// ── State machine ─────────────────────────────────────────────────────────────
 const State = { START:'START', PLAYING:'PLAYING', DEAD:'DEAD', LEVEL_CLEAR:'LEVEL_CLEAR' };
 let gameState = State.START;
 
-// ── Level & run tracking ──────────────────────────────────────────────────────
+// ── Level / run tracking ──────────────────────────────────────────────────────
 let currentLevel   = 1;
 let runScore       = 0;
 let levelStartTime = 0;
@@ -72,40 +72,29 @@ canvas.addEventListener('mousedown', e => {
 // ── Containers ────────────────────────────────────────────────────────────────
 let containers = [];
 
-function tooCloseToAny(x, y, clearR, list) {
+function tooCloseToAny(x, y, r, list) {
   for (const c of list) {
     const cr = c.type === 'barrel' ? BARREL_R : CRATE_SIZE / 2;
-    if (Math.hypot(x - c.x, y - c.y) < clearR + cr + 14) return true;
+    if (Math.hypot(x - c.x, y - c.y) < r + cr + 14) return true;
   }
   return false;
 }
 
 function generateContainers(enemyPositions) {
-  const result   = [];
-  const MARGIN   = 52;
-  const COUNT    = 8;
-  const MAX_TRIES = 300;
-
+  const result = [];
+  const MARGIN = 52, COUNT = 8, MAX_TRIES = 300;
   for (let i = 0; i < COUNT; i++) {
     for (let t = 0; t < MAX_TRIES; t++) {
       const isBarrel = Math.random() < 0.4;
       const cr = isBarrel ? BARREL_R : CRATE_SIZE / 2;
       const x  = MARGIN + Math.random() * (CANVAS_W - MARGIN * 2);
       const y  = MARGIN + Math.random() * (CANVAS_H - MARGIN * 2);
-
-      // Clear of player spawn (centre)
       if (Math.hypot(x - CANVAS_W / 2, y - CANVAS_H / 2) < 90) continue;
-
-      // Clear of enemy spawns
       let blocked = false;
       for (const [ex, ey] of enemyPositions) {
         if (Math.hypot(x - ex, y - ey) < 64) { blocked = true; break; }
       }
-      if (blocked) continue;
-
-      // Clear of existing containers
-      if (tooCloseToAny(x, y, cr, result)) continue;
-
+      if (blocked || tooCloseToAny(x, y, cr, result)) continue;
       result.push({ type: isBarrel ? 'barrel' : 'crate', x, y });
       break;
     }
@@ -113,11 +102,8 @@ function generateContainers(enemyPositions) {
   return result;
 }
 
-// ── Container collision helpers ───────────────────────────────────────────────
 function bulletHitsContainer(b, c) {
-  if (c.type === 'barrel') {
-    return Math.hypot(b.x - c.x, b.y - c.y) < BARREL_R + BULLET_R;
-  }
+  if (c.type === 'barrel') return Math.hypot(b.x - c.x, b.y - c.y) < BARREL_R + BULLET_R;
   const h = CRATE_SIZE / 2 + BULLET_R;
   return Math.abs(b.x - c.x) < h && Math.abs(b.y - c.y) < h;
 }
@@ -133,7 +119,6 @@ function pushEntityOutOfContainer(ent, entR, c) {
     }
     return;
   }
-  // Crate AABB
   const h = CRATE_SIZE / 2 + entR;
   const dx = ent.x - c.x, dy = ent.y - c.y;
   if (Math.abs(dx) < h && Math.abs(dy) < h) {
@@ -146,35 +131,20 @@ function pushEntityOutOfContainer(ent, entR, c) {
 function drawContainers() {
   for (const c of containers) {
     if (c.type === 'barrel') {
-      // Outer ring
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, BARREL_R, 0, Math.PI * 2);
-      ctx.fillStyle   = '#c85a00';
-      ctx.strokeStyle = '#7a3800';
-      ctx.lineWidth   = 2.5;
+      ctx.beginPath(); ctx.arc(c.x, c.y, BARREL_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#c85a00'; ctx.strokeStyle = '#7a3800'; ctx.lineWidth = 2.5;
       ctx.fill(); ctx.stroke();
-      // Inner highlight band
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, BARREL_R * 0.55, 0, Math.PI * 2);
-      ctx.strokeStyle = '#ff8c20';
-      ctx.lineWidth   = 2;
-      ctx.stroke();
-      // Centre dot
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(c.x, c.y, BARREL_R * 0.55, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ff8c20'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
       ctx.fillStyle = '#ff8c20'; ctx.fill();
     } else {
       const h = CRATE_SIZE / 2;
-      // Main fill
       ctx.fillStyle = '#2a6b2a';
       ctx.fillRect(c.x - h, c.y - h, CRATE_SIZE, CRATE_SIZE);
-      // Border
-      ctx.strokeStyle = '#1a4a1a';
-      ctx.lineWidth   = 2.5;
+      ctx.strokeStyle = '#1a4a1a'; ctx.lineWidth = 2.5;
       ctx.strokeRect(c.x - h, c.y - h, CRATE_SIZE, CRATE_SIZE);
-      // Cross detail
-      ctx.strokeStyle = '#3a8a3a';
-      ctx.lineWidth   = 1;
+      ctx.strokeStyle = '#3a8a3a'; ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(c.x - h + 4, c.y); ctx.lineTo(c.x + h - 4, c.y);
       ctx.moveTo(c.x, c.y - h + 4); ctx.lineTo(c.x, c.y + h - 4);
@@ -183,8 +153,77 @@ function drawContainers() {
   }
 }
 
+// ── Top-down person renderer ───────────────────────────────────────────────────
+// angle=0 faces RIGHT. We rotate so local -Y (head) points in facing direction.
+// walkTimer accumulates over time; isMoving controls whether legs swing.
+function drawTopDownPerson(x, y, angle, walkTimer, isMoving, bodyCol, headCol) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle + Math.PI / 2);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const sw = isMoving ? Math.sin(walkTimer * 9) : 0;  // swing −1..1
+
+  // Foot positions (local: head at -Y, feet at +Y)
+  const lFx = -2 - sw * 1.5, lFy = 15 - sw * 6;
+  const rFx =  2 + sw * 1.5, rFy = 15 + sw * 6;
+  // Hand positions (arms swing opposite phase)
+  const lHx = -14 + sw * 2, lHy = sw * 5;
+  const rHx =  14 - sw * 2, rHy = -sw * 5;
+
+  // ── Shadow ──────────────────────────────────────────────────────
+  ctx.beginPath();
+  ctx.ellipse(0, 3, 13, 9, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fill();
+
+  // ── Legs (drawn behind torso) ────────────────────────────────────
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = bodyCol;
+  ctx.beginPath(); ctx.moveTo(-4, 8); ctx.lineTo(lFx, lFy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo( 4, 8); ctx.lineTo(rFx, rFy); ctx.stroke();
+  // Feet — small dark ovals
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.ellipse(lFx, lFy, 4, 3, sw * 0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(rFx, rFy, 4, 3, -sw * 0.3, 0, Math.PI * 2); ctx.fill();
+
+  // ── Torso ────────────────────────────────────────────────────────
+  ctx.beginPath();
+  ctx.ellipse(0, 1, 8, 11, 0, 0, Math.PI * 2);
+  ctx.fillStyle = bodyCol;
+  ctx.fill();
+
+  // ── Arms ─────────────────────────────────────────────────────────
+  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = bodyCol;
+  ctx.beginPath(); ctx.moveTo(-8, -2); ctx.lineTo(lHx, lHy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo( 8, -2); ctx.lineTo(rHx, rHy); ctx.stroke();
+  // Hands
+  ctx.fillStyle = headCol;
+  ctx.beginPath(); ctx.arc(lHx, lHy, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(rHx, rHy, 3, 0, Math.PI * 2); ctx.fill();
+
+  // ── Head ─────────────────────────────────────────────────────────
+  ctx.beginPath();
+  ctx.arc(0, -11, 8, 0, Math.PI * 2);
+  ctx.fillStyle = headCol;
+  ctx.fill();
+  // Direction nub (crown of head, visible as a dark dot from above)
+  ctx.beginPath();
+  ctx.arc(0, -18, 3, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.fill();
+
+  ctx.restore();
+}
+
 // ── Player ────────────────────────────────────────────────────────────────────
-const player = { x: CANVAS_W / 2, y: CANVAS_H / 2, angle: 0, ammo: START_AMMO };
+const player = {
+  x: CANVAS_W / 2, y: CANVAS_H / 2,
+  angle: 0, ammo: START_AMMO,
+  walkTimer: 0, isMoving: false,
+};
 
 function updatePlayer(dt) {
   let dx = 0, dy = 0;
@@ -193,6 +232,8 @@ function updatePlayer(dt) {
   if (keys['KeyA'] || keys['ArrowLeft'])  dx -= 1;
   if (keys['KeyD'] || keys['ArrowRight']) dx += 1;
   if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+  player.isMoving = dx !== 0 || dy !== 0;
+  if (player.isMoving) player.walkTimer += dt * 5;
   player.x += dx * PLAYER_SPEED * dt;
   player.y += dy * PLAYER_SPEED * dt;
   player.x = Math.max(PLAYER_R, Math.min(CANVAS_W - PLAYER_R, player.x));
@@ -202,16 +243,20 @@ function updatePlayer(dt) {
 }
 
 function drawPlayer() {
-  const { x, y, angle } = player;
+  drawTopDownPerson(
+    player.x, player.y, player.angle,
+    player.walkTimer, player.isMoving,
+    '#2255cc', '#d4a97a'
+  );
+  // Gun barrel (world-space, always aims at mouse)
   ctx.save();
-  ctx.translate(x, y); ctx.rotate(angle);
-  ctx.beginPath(); ctx.arc(0, 0, PLAYER_R, 0, Math.PI * 2);
-  ctx.fillStyle = '#4af'; ctx.strokeStyle = '#8cf'; ctx.lineWidth = 2;
-  ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(PLAYER_R, 0); ctx.lineTo(PLAYER_R + 14, 0);
-  ctx.strokeStyle = '#cef'; ctx.lineWidth = 3; ctx.stroke();
-  ctx.beginPath(); ctx.arc(4, 0, 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#8df'; ctx.fill();
+  ctx.translate(player.x, player.y);
+  ctx.rotate(player.angle);
+  ctx.translate(6, 3); // offset to right-hand side
+  ctx.fillStyle = '#aaa';
+  ctx.fillRect(2, -2.5, 18, 5);   // barrel
+  ctx.fillStyle = '#777';
+  ctx.fillRect(2, -4,    9, 8);   // slide / grip block
   ctx.restore();
 }
 
@@ -221,10 +266,10 @@ let bullets = [];
 function spawnBullet() {
   if (player.ammo <= 0) return;
   player.ammo--; session.shots++;
-  const tip = PLAYER_R + 14;
+  const tip = PLAYER_R + 22;
   bullets.push({
-    x: player.x + Math.cos(player.angle) * tip,
-    y: player.y + Math.sin(player.angle) * tip,
+    x:  player.x + Math.cos(player.angle) * tip,
+    y:  player.y + Math.sin(player.angle) * tip,
     vx: Math.cos(player.angle) * BULLET_SPEED,
     vy: Math.sin(player.angle) * BULLET_SPEED,
   });
@@ -254,7 +299,9 @@ function drawBullets() {
 let enemies = [];
 
 function spawnEnemies(positions) {
-  enemies = positions.map(([x, y]) => ({ x, y, hp: ENEMY_MAX_HP, angle: 0, flashTimer: 0 }));
+  enemies = positions.map(([x, y]) => ({
+    x, y, hp: ENEMY_MAX_HP, angle: 0, flashTimer: 0, walkTimer: 0,
+  }));
 }
 
 function updateEnemies(dt) {
@@ -264,6 +311,7 @@ function updateEnemies(dt) {
     if (dist > 1) {
       e.x += (dx / dist) * ENEMY_SPEED * dt;
       e.y += (dy / dist) * ENEMY_SPEED * dt;
+      e.walkTimer += dt * 5;
     }
     e.angle = Math.atan2(dy, dx);
     if (e.flashTimer > 0) e.flashTimer -= dt;
@@ -291,33 +339,20 @@ function resolveBulletEnemyCollisions() {
   enemies = liveEnemies;
 }
 
-function drawStickFigure(e) {
-  const flash = e.flashTimer > 0;
-  const col   = flash ? '#fff' : (e.hp === ENEMY_MAX_HP ? '#e44' : '#f96');
-  ctx.save();
-  ctx.translate(e.x, e.y); ctx.rotate(e.angle);
-  ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.arc(0, -14, 7, 0, Math.PI * 2);
-  ctx.fillStyle = col; ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(0, 8); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-9, -2); ctx.lineTo(9, -2); ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(0, 8); ctx.lineTo(-7, 20);
-  ctx.moveTo(0, 8); ctx.lineTo(7,  20);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawEnemyHPBar(e) {
-  const W = 34, H = 5, bx = e.x - W / 2, by = e.y - 36;
-  ctx.fillStyle = '#400'; ctx.fillRect(bx, by, W, H);
-  ctx.fillStyle = e.hp === ENEMY_MAX_HP ? '#4f4' : '#f84';
-  ctx.fillRect(bx, by, W * (e.hp / ENEMY_MAX_HP), H);
-  ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, W, H);
-}
-
 function drawEnemies() {
-  for (const e of enemies) { drawStickFigure(e); drawEnemyHPBar(e); }
+  for (const e of enemies) {
+    const flash = e.flashTimer > 0;
+    const bodyCol = flash ? '#fff' : (e.hp === ENEMY_MAX_HP ? '#991111' : '#cc6622');
+    const headCol = flash ? '#fff' : '#d4a97a';
+    drawTopDownPerson(e.x, e.y, e.angle, e.walkTimer, true, bodyCol, headCol);
+
+    // HP bar (world-space, above figure)
+    const W = 34, H = 5, bx = e.x - W / 2, by = e.y - 42;
+    ctx.fillStyle = '#400'; ctx.fillRect(bx, by, W, H);
+    ctx.fillStyle = e.hp === ENEMY_MAX_HP ? '#4f4' : '#f84';
+    ctx.fillRect(bx, by, W * (e.hp / ENEMY_MAX_HP), H);
+    ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, W, H);
+  }
 }
 
 // ── Level clear ───────────────────────────────────────────────────────────────
@@ -337,17 +372,46 @@ function checkLevelClear() {
   showScreen('level-screen');
 }
 
+// ── Floor (building top-down view) ────────────────────────────────────────────
+const TILE = 60;
+function drawFloor() {
+  // Concrete base
+  ctx.fillStyle = '#27272b';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Alternating tile fill
+  for (let tx = 0; tx * TILE < CANVAS_W; tx++) {
+    for (let ty = 0; ty * TILE < CANVAS_H; ty++) {
+      if ((tx + ty) % 2 === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.028)';
+        ctx.fillRect(tx * TILE + 1, ty * TILE + 1, TILE - 2, TILE - 2);
+      }
+    }
+  }
+
+  // Grout lines
+  ctx.strokeStyle = '#1c1c1f';
+  ctx.lineWidth   = 1;
+  for (let x = 0; x <= CANVAS_W; x += TILE) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke();
+  }
+  for (let y = 0; y <= CANVAS_H; y += TILE) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke();
+  }
+
+  // Room border wall
+  ctx.strokeStyle = '#444448';
+  ctx.lineWidth   = 10;
+  ctx.strokeRect(5, 5, CANVAS_W - 10, CANVAS_H - 10);
+  // Inner wall highlight
+  ctx.strokeStyle = '#5a5a60';
+  ctx.lineWidth   = 2;
+  ctx.strokeRect(10, 10, CANVAS_W - 20, CANVAS_H - 20);
+}
+
 // ── Draw scene ────────────────────────────────────────────────────────────────
 function drawScene() {
-  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  ctx.strokeStyle = '#252525'; ctx.lineWidth = 1;
-  const GRID = 60;
-  for (let gx = 0; gx < CANVAS_W; gx += GRID) {
-    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, CANVAS_H); ctx.stroke();
-  }
-  for (let gy = 0; gy < CANVAS_H; gy += GRID) {
-    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CANVAS_W, gy); ctx.stroke();
-  }
+  drawFloor();
   drawContainers();
   drawBullets();
   drawEnemies();
@@ -405,17 +469,17 @@ function spawnPositionsForLevel(level) {
 
 // ── Begin level ───────────────────────────────────────────────────────────────
 function beginLevel(level) {
-  currentLevel = level;
-  bullets      = [];
-  player.x     = CANVAS_W / 2;
-  player.y     = CANVAS_H / 2;
-  player.angle = 0;
+  currentLevel      = level;
+  bullets           = [];
+  player.x          = CANVAS_W / 2;
+  player.y          = CANVAS_H / 2;
+  player.angle      = 0;
+  player.walkTimer  = 0;
+  player.isMoving   = false;
   if (level === 1) player.ammo = START_AMMO;
-
   const enemyPos = spawnPositionsForLevel(level);
   containers     = generateContainers(enemyPos);
   spawnEnemies(enemyPos);
-
   levelStartTime = performance.now();
   levelActive    = true;
   hideAllScreens();
@@ -454,6 +518,6 @@ document.getElementById('btn-next-level').addEventListener('click', () => beginL
 // ── Boot ──────────────────────────────────────────────────────────────────────
 refreshStartScreen();
 showScreen('start-screen');
-ctx.fillStyle = '#1a1a1a';
+ctx.fillStyle = '#27272b';
 ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 requestAnimationFrame(ts => { lastTime = ts; requestAnimationFrame(loop); });
