@@ -1,6 +1,6 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CANVAS_W      = 900;
-const CANVAS_H      = 600;
+let CANVAS_W        = 900;
+let CANVAS_H        = 600;
 const PLAYER_SPEED  = 180;
 const PLAYER_R      = 12;
 const BULLET_SPEED  = 520;
@@ -21,6 +21,11 @@ const GUNNER_SHOOT_INTERVAL  = 2.4;   // seconds
 function enemyCountForLevel(level)  { return 1 + level * 2; }
 function gunnerCountForLevel(level) { return Math.max(0, level - 1); }
 function maxHPForLevel(level)       { return PLAYER_MAX_HP + (level - 1); }
+// Arena grows every third level (L3→tier1, L6→tier2, L9→tier3 max)
+function mapSizeForLevel(level) {
+  const tier = Math.min(Math.floor(level / 3), 3);
+  return { w: 900 + tier * 150, h: 600 + tier * 100 };
+}
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
@@ -38,7 +43,8 @@ let currentMaxHP   = PLAYER_MAX_HP;
 let runScore       = 0;
 let levelStartTime = 0;
 let levelActive    = false;
-let introTimer     = 0;
+let introTimer       = 0;
+let mapJustExpanded  = false;
 const INTRO_DURATION = 1.6;
 
 // ── Persistent stats ──────────────────────────────────────────────────────────
@@ -895,7 +901,17 @@ function generatePlayerSpawnPoints(enemyPositions) {
 
 // ── Begin level ───────────────────────────────────────────────────────────────
 function beginLevel(level) {
-  currentLevel      = level;
+  currentLevel = level;
+
+  // Resize arena — must happen before spawn/container generation so
+  // the new CANVAS_W/H bounds are used for placement
+  const { w, h } = mapSizeForLevel(level);
+  mapJustExpanded  = w > CANVAS_W;
+  CANVAS_W         = w;
+  CANVAS_H         = h;
+  canvas.width     = w;
+  canvas.height    = h;
+
   hearts            = [];
   bullets           = [];
   enemyBullets      = [];
@@ -972,6 +988,12 @@ function drawLevelIntro() {
     ? `${total} enemies  ·  ${guns} gunner${guns !== 1 ? 's' : ''}`
     : `${total} enemies`;
   ctx.fillText(sub, CANVAS_W / 2, CANVAS_H / 2 + 38);
+
+  if (mapJustExpanded) {
+    ctx.font      = 'bold 13px Courier New';
+    ctx.fillStyle = '#44ff88';
+    ctx.fillText('— arena expanded —', CANVAS_W / 2, CANVAS_H / 2 + 62);
+  }
 
   ctx.globalAlpha = 1;
   ctx.restore();
