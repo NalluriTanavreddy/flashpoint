@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600">
+<defs>
+  <pattern id="fl5" x="0" y="0" width="120" height="120" patternUnits="userSpaceOnUse">
+    <rect width="120" height="120" fill="#27272b"/>
+    <rect x="1" y="1" width="58" height="58" fill="#fff" fill-opacity="0.028"/>
+    <rect x="62" y="62" width="58" height="58" fill="#fff" fill-opacity="0.028"/>
+    <line x1="0"  y1="0"  x2="0"   y2="120" stroke="#1c1c1f" stroke-width="1"/>
+    <line x1="60" y1="0"  x2="60"  y2="120" stroke="#1c1c1f" stroke-width="1"/>
+    <line x1="0"  y1="0"  x2="120" y2="0"   stroke="#1c1c1f" stroke-width="1"/>
+    <line x1="0"  y1="60" x2="120" y2="60"  stroke="#1c1c1f" stroke-width="1"/>
+  </pattern>
+</defs>
+
+<!-- Floor -->
+<rect width="900" height="600" fill="url(#fl5)"/>
+<!-- Walls -->
+<rect x="5"  y="5"  width="890" height="590" fill="none" stroke="#444448" stroke-width="10"/>
+<rect x="10" y="10" width="880" height="580" fill="none" stroke="#5a5a60" stroke-width="2"/>
+
+<!-- Crates -->
+<rect x="220" y="180" width="42" height="42" fill="#2a6b2a" fill-opacity="0.7" stroke="#1a4a1a" stroke-width="2"/>
+<rect x="640" y="340" width="42" height="42" fill="#2a6b2a" fill-opacity="0.7" stroke="#1a4a1a" stroke-width="2"/>
+<!-- Barrels -->
+<circle cx="380" cy="420" r="18" fill="#8b4513" fill-opacity="0.7" stroke="#5a2d0c" stroke-width="2"/>
+<circle cx="550" cy="200" r="18" fill="#8b4513" fill-opacity="0.7" stroke="#5a2d0c" stroke-width="2"/>
+
+<!-- Regular enemies still alive -->
+<!-- Rusher (red, facing player) -->
+<ellipse cx="300" cy="310" rx="11" ry="8" fill="#991111" transform="rotate(-20, 300, 310)"/>
+<circle  cx="311" cy="307" r="8" fill="#d4a97a"/>
+<!-- Gunner (orange, with gun indicator) -->
+<ellipse cx="620" cy="240" rx="11" ry="8" fill="#cc6622" transform="rotate(150, 620, 240)"/>
+<circle  cx="610" cy="247" r="8" fill="#d4a97a"/>
+<line x1="610" y1="247" x2="595" y2="260" stroke="#555" stroke-width="3" stroke-linecap="round"/>
+
+<!-- Player -->
+<ellipse cx="450" cy="310" rx="11" ry="8" fill="#2255cc"/>
+<circle  cx="462" cy="307" r="8" fill="#d4a97a"/>
+<!-- Gun barrel -->
+<line x1="462" y1="307" x2="490" y2="298" stroke="#888" stroke-width="3" stroke-linecap="round"/>
+<!-- Muzzle flash -->
+<circle cx="492" cy="297" r="4" fill="#ffe066" fill-opacity="0.8"/>
+
+<!-- ═══ DRONES at all 4 corners ═══ -->
+
+<!-- Top-left drone: just activated, rotate ~0° -->
+<g transform="translate(38,32) rotate(0)">
+  <line x1="4" y1="0" x2="11" y2="0"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="-4" y1="0" x2="-11" y2="0" stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="4" x2="0" y2="11"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="-4" x2="0" y2="-11" stroke="#aa44ff" stroke-width="2"/>
+  <circle cx="11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="-11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="-11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="0" r="3.5" fill="#ff44ff"/>
+</g>
+<!-- Purple glow around top-left drone -->
+<circle cx="38" cy="32" r="18" fill="none" stroke="#aa44ff" stroke-width="1" stroke-opacity="0.4"/>
+
+<!-- Top-right drone: rotate 25° -->
+<g transform="translate(862,32) rotate(25)">
+  <line x1="4" y1="0" x2="11" y2="0"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="-4" y1="0" x2="-11" y2="0" stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="4" x2="0" y2="11"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="-4" x2="0" y2="-11" stroke="#aa44ff" stroke-width="2"/>
+  <circle cx="11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="-11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="-11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="0" r="3.5" fill="#ff44ff"/>
+</g>
+<circle cx="862" cy="32" r="18" fill="none" stroke="#aa44ff" stroke-width="1" stroke-opacity="0.4"/>
+
+<!-- Bottom-left drone: rotate 45° -->
+<g transform="translate(38,568) rotate(45)">
+  <line x1="4" y1="0" x2="11" y2="0"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="-4" y1="0" x2="-11" y2="0" stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="4" x2="0" y2="11"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="-4" x2="0" y2="-11" stroke="#aa44ff" stroke-width="2"/>
+  <circle cx="11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="-11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="-11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="0" r="3.5" fill="#ff44ff"/>
+</g>
+<circle cx="38" cy="568" r="18" fill="none" stroke="#aa44ff" stroke-width="1" stroke-opacity="0.4"/>
+
+<!-- Bottom-right drone: rotate 70° -->
+<g transform="translate(862,568) rotate(70)">
+  <line x1="4" y1="0" x2="11" y2="0"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="-4" y1="0" x2="-11" y2="0" stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="4" x2="0" y2="11"   stroke="#aa44ff" stroke-width="2"/>
+  <line x1="0" y1="-4" x2="0" y2="-11" stroke="#aa44ff" stroke-width="2"/>
+  <circle cx="11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="-11" cy="0" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="-11" r="2.2" fill="#cc66ff"/>
+  <circle cx="0" cy="0" r="3.5" fill="#ff44ff"/>
+</g>
+<circle cx="862" cy="568" r="18" fill="none" stroke="#aa44ff" stroke-width="1" stroke-opacity="0.4"/>
+
+<!-- Purple particle sparks at top-left corner (deploy effect) -->
+<circle cx="52" cy="18" r="1.8" fill="#cc66ff" fill-opacity="0.7"/>
+<circle cx="20" cy="44" r="1.4" fill="#aa44ff" fill-opacity="0.6"/>
+<circle cx="58" cy="50" r="1.2" fill="#ff44ff" fill-opacity="0.5"/>
+<circle cx="16" cy="22" r="1.6" fill="#cc66ff" fill-opacity="0.6"/>
+
+<!-- Purple particle sparks at bottom-right corner -->
+<circle cx="876" cy="554" r="1.8" fill="#cc66ff" fill-opacity="0.7"/>
+<circle cx="850" cy="580" r="1.4" fill="#aa44ff" fill-opacity="0.6"/>
+<circle cx="880" cy="578" r="1.2" fill="#ff44ff" fill-opacity="0.5"/>
+
+<!-- ═══ DRONE WARNING BANNER (non-blocking, top-center) ═══ -->
+<!-- Banner background -->
+<rect x="302" y="37" width="296" height="24" fill="#1a0030"/>
+<rect x="302" y="37" width="296" height="24" fill="none" stroke="#aa44ff" stroke-width="1.5"/>
+<!-- Warning text -->
+<text x="450" y="53" text-anchor="middle"
+      fill="#cc88ff" font-family="'Courier New',monospace" font-size="13" font-weight="bold" letter-spacing="0.04em">⚠  DRONE STRIKE  ·  3s</text>
+
+<!-- ═══ HUD ═══ -->
+<!-- Level + enemy count -->
+<text x="450" y="24" text-anchor="middle"
+      fill="#ccc" font-family="'Courier New',monospace" font-size="15" font-weight="bold">LEVEL 10   ·   ENEMIES  4</text>
+<!-- Score -->
+<text x="10" y="24" fill="#ff9955" font-family="'Courier New',monospace" font-size="13" font-weight="bold">SCORE  24800</text>
+<!-- Ammo -->
+<text x="890" y="590" text-anchor="end" fill="#ffe066" font-family="'Courier New',monospace" font-size="18" font-weight="bold">AMMO  12</text>
+
+<!-- HP pips — top right -->
+<text x="890" y="24" text-anchor="end" fill="#e44" font-family="'Courier New',monospace" font-size="12" font-weight="bold">HP</text>
+<circle cx="866" cy="18" r="7" fill="#e44" stroke="#666" stroke-width="1"/>
+<circle cx="846" cy="18" r="7" fill="#e44" stroke="#666" stroke-width="1"/>
+<circle cx="826" cy="18" r="7" fill="#e44" stroke="#666" stroke-width="1"/>
+<circle cx="806" cy="18" r="7" fill="#333" stroke="#666" stroke-width="1"/>
+
+<!-- Pause icon -->
+<rect x="864" y="28" width="20" height="18" rx="2" fill="#3a3a3e" stroke="#555" stroke-width="1"/>
+<rect x="868" y="31" width="4" height="12" fill="#777"/>
+<rect x="875" y="31" width="4" height="12" fill="#777"/>
+
+<!-- ═══ MINIMAP ═══ -->
+<rect x="14" y="486" width="150" height="100" fill="#000" fill-opacity="0.72" stroke="#3a3a3e" stroke-width="1"/>
+<text x="18" y="495" fill="#3a3a3e" font-family="'Courier New',monospace" font-size="8">RADAR</text>
+
+<!-- Crate blips -->
+<rect cx="38" cy="520" width="3" height="3" fill="#1a4a1a" x="38" y="518"/>
+<rect cx="120" cy="543" width="3" height="3" fill="#1a4a1a" x="120" y="542"/>
+<!-- Enemy blips -->
+<circle cx="64"  cy="538" r="2"   fill="#cc2200"/>
+<circle cx="117" cy="524" r="2.5" fill="#ff8833"/>
+<!-- Drone blips — purple, blinking (shown solid for screenshot) -->
+<circle cx="21"  cy="492" r="2.5" fill="#cc44ff"/>
+<circle cx="157" cy="492" r="2.5" fill="#cc44ff"/>
+<circle cx="21"  cy="579" r="2.5" fill="#cc44ff"/>
+<circle cx="157" cy="579" r="2.5" fill="#cc44ff"/>
+<!-- Player blip -->
+<circle cx="89"  cy="537" r="3"   fill="#4488ff" stroke="#fff" stroke-width="0.8"/>
+<line x1="89" y1="537" x2="97" y2="534" stroke="rgba(100,170,255,0.65)" stroke-width="1"/>
+</svg>

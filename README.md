@@ -27,6 +27,7 @@
 | 🔥 **Kill streaks** | Chain kills within 2 s for ×2 / ×3 score multiplier |
 | ❤️ **Dynamic HP** | Max HP grows every level · half-pip knife damage · heart pickups |
 | 🗺️ **Growing arena** | Map expands at L3, L6, L9 to match the rising enemy count |
+| 🚁 **Drone swarm** | From L10, drones deploy from all 4 corners with a 5 s warning; swarm size multiplies ×1.5 each round |
 | 📈 **Difficulty scaling** | Gunner accuracy and fire rate increase each level — plus Easy/Normal/Hard |
 | 📡 **Minimap radar** | Live RADAR panel auto-scales to the current arena size |
 | 🔊 **Synthesised audio** | All sounds generated via Web Audio oscillators — zero audio files |
@@ -46,6 +47,12 @@
 <td width="50%" align="center">
 <img src="screenshots/pause-menu.svg" width="100%" alt="In-canvas pause menu with volume, difficulty and sensitivity controls"/>
 <br/><em>Pause menu — fully canvas-drawn, opened with ESC or the HUD icon</em>
+</td>
+</tr>
+<tr>
+<td colspan="2" align="center">
+<img src="screenshots/drone-warning.svg" width="100%" alt="Level 10 drone strike warning — four drones deploy from map corners with a 5-second countdown"/>
+<br/><em>Drone strike — from level 10, four drones deploy from the corners with a 5 s countdown; kill count grows ×1.5 each round</em>
 </td>
 </tr>
 </table>
