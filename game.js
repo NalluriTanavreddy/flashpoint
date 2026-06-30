@@ -78,6 +78,10 @@ const INTRO_DURATION = 1.6;
 let masterVolume     = 0.8;
 let difficulty       = 'normal';
 let volumeDragging   = false;
+let joySensitivity   = 1.0;   // 0.5–2.0  movement speed multiplier for the joystick
+let aimSensitivity   = 1.0;   // 0.5–2.0  aim cursor speed per pixel of drag
+let joySensDragging  = false;
+let aimSensDragging  = false;
 let streakCount      = 0;
 let streakTimer      = 0;
 const STREAK_WINDOW  = 2.0;
@@ -209,14 +213,14 @@ function clientToCanvas(clientX, clientY) {
 canvas.addEventListener('mousemove', e => {
   const p = clientToCanvas(e.clientX, e.clientY);
   mouse.x = p.x; mouse.y = p.y;
-  // Drag volume thumb while pause menu is open
-  if (volumeDragging && gameState === State.PAUSED) {
+  if (gameState === State.PAUSED) {
     const PW = 300, sX = Math.floor((CANVAS_W - PW) / 2) + 50, sW = PW - 100;
-    masterVolume = Math.max(0, Math.min(1, (mouse.x - sX) / sW));
-    if (masterGain) masterGain.gain.value = masterVolume;
+    if (volumeDragging)   { masterVolume  = Math.max(0, Math.min(1, (mouse.x - sX) / sW)); if (masterGain) masterGain.gain.value = masterVolume; }
+    if (joySensDragging)  joySensitivity = 0.5 + Math.max(0, Math.min(1, (mouse.x - sX) / sW)) * 1.5;
+    if (aimSensDragging)  aimSensitivity = 0.5 + Math.max(0, Math.min(1, (mouse.x - sX) / sW)) * 1.5;
   }
 });
-window.addEventListener('mouseup', () => { volumeDragging = false; });
+window.addEventListener('mouseup', () => { volumeDragging = false; joySensDragging = false; aimSensDragging = false; });
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   const { x: mx, y: my } = clientToCanvas(e.clientX, e.clientY);
@@ -233,13 +237,20 @@ canvas.addEventListener('mousedown', e => {
 
 // Virtual joystick (left-half touch = move, right-half touch = aim + fire)
 const joystick = { active: false, baseX: 0, baseY: 0, dx: 0, dy: 0, id: -1 };
-const aimTouch = { active: false, id: -1 };
+const aimTouch = { active: false, id: -1, lastX: 0, lastY: 0 };
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   for (const t of e.changedTouches) {
     const { x: cx, y: cy } = clientToCanvas(t.clientX, t.clientY);
-    if (cx < CANVAS_W / 2) {
+    if (gameState === State.PAUSED) {
+      // All touches route through the pause menu; track as aimTouch for slider drags
+      handlePauseClick(cx, cy);
+      if (!aimTouch.active) {
+        aimTouch.active = true; aimTouch.id = t.identifier;
+        aimTouch.lastX = cx; aimTouch.lastY = cy;
+      }
+    } else if (cx < CANVAS_W / 2) {
       if (!joystick.active) {
         joystick.active = true;
         joystick.baseX  = cx; joystick.baseY = cy;
@@ -248,11 +259,10 @@ canvas.addEventListener('touchstart', e => {
       }
     } else {
       if (!aimTouch.active) {
-        aimTouch.active = true;
-        aimTouch.id     = t.identifier;
+        aimTouch.active = true; aimTouch.id = t.identifier;
+        aimTouch.lastX = cx; aimTouch.lastY = cy;
         mouse.x = cx; mouse.y = cy;
-        if (gameState === State.PAUSED)  { handlePauseClick(cx, cy); }
-        else if (gameState === State.PLAYING) { mouse.fired = true; }
+        if (gameState === State.PLAYING) { mouse.fired = true; }
       }
     }
   }
@@ -274,7 +284,19 @@ canvas.addEventListener('touchmove', e => {
         joystick.dx = 0; joystick.dy = 0;
       }
     } else if (t.identifier === aimTouch.id) {
-      mouse.x = cx; mouse.y = cy;
+      if (gameState === State.PAUSED) {
+        const PW = 300, sX = Math.floor((CANVAS_W - PW) / 2) + 50, sW = PW - 100;
+        if (volumeDragging)   { masterVolume   = Math.max(0, Math.min(1, (cx - sX) / sW)); if (masterGain) masterGain.gain.value = masterVolume; }
+        if (joySensDragging)  joySensitivity  = 0.5 + Math.max(0, Math.min(1, (cx - sX) / sW)) * 1.5;
+        if (aimSensDragging)  aimSensitivity  = 0.5 + Math.max(0, Math.min(1, (cx - sX) / sW)) * 1.5;
+      } else {
+        // Delta-based aiming so aimSensitivity is meaningful
+        const ddx = (cx - aimTouch.lastX) * aimSensitivity;
+        const ddy = (cy - aimTouch.lastY) * aimSensitivity;
+        mouse.x = Math.max(0, Math.min(CANVAS_W, mouse.x + ddx));
+        mouse.y = Math.max(0, Math.min(CANVAS_H, mouse.y + ddy));
+        aimTouch.lastX = cx; aimTouch.lastY = cy;
+      }
     }
   }
 }, { passive: false });
@@ -284,6 +306,7 @@ function endTouch(t) {
     joystick.active = false; joystick.dx = 0; joystick.dy = 0; joystick.id = -1;
   } else if (t.identifier === aimTouch.id) {
     aimTouch.active = false; aimTouch.id = -1;
+    volumeDragging = false; joySensDragging = false; aimSensDragging = false;
   }
 }
 canvas.addEventListener('touchend',    e => { e.preventDefault(); for (const t of e.changedTouches) endTouch(t); }, { passive: false });
@@ -295,18 +318,20 @@ function togglePause() {
 }
 
 function handlePauseClick(mx, my) {
-  const PW = 300, PH = 380;
+  const PW = 300, PH = 480;
   const ox = Math.floor((CANVAS_W - PW) / 2);
   const oy = Math.floor((CANVAS_H - PH) / 2);
+  const sW = PW - 100, sX = ox + 50;
 
-  const sX = ox + 50, sY = oy + 96, sW = PW - 100;
-  if (mx >= sX - 10 && mx <= sX + sW + 10 && my >= sY - 12 && my <= sY + 12) {
+  // Volume slider
+  if (mx >= sX - 10 && mx <= sX + sW + 10 && my >= oy + 84 && my <= oy + 108) {
     volumeDragging = true;
     masterVolume   = Math.max(0, Math.min(1, (mx - sX) / sW));
     if (masterGain) masterGain.gain.value = masterVolume;
     return;
   }
 
+  // Difficulty buttons
   const diffs = ['easy', 'normal', 'hard'];
   const dbW = 78, dbH = 26, dbGap = 6;
   const dtW = diffs.length * dbW + (diffs.length - 1) * dbGap;
@@ -318,8 +343,23 @@ function handlePauseClick(mx, my) {
     }
   }
 
+  // Move Speed slider
+  if (mx >= sX - 10 && mx <= sX + sW + 10 && my >= oy + 210 && my <= oy + 234) {
+    joySensDragging = true;
+    joySensitivity  = 0.5 + Math.max(0, Math.min(1, (mx - sX) / sW)) * 1.5;
+    return;
+  }
+
+  // Aim Drag slider
+  if (mx >= sX - 10 && mx <= sX + sW + 10 && my >= oy + 256 && my <= oy + 280) {
+    aimSensDragging = true;
+    aimSensitivity  = 0.5 + Math.max(0, Math.min(1, (mx - sX) / sW)) * 1.5;
+    return;
+  }
+
+  // Action buttons (shifted down by 110px from original)
   const abX = ox + 36, abW = PW - 72, abH = 34;
-  const abYs = [oy + 204, oy + 250, oy + 296];
+  const abYs = [oy + 314, oy + 360, oy + 406];
   if (mx >= abX && mx <= abX + abW) {
     if (my >= abYs[0] && my < abYs[0] + abH) { gameState = State.PLAYING; }
     if (my >= abYs[1] && my < abYs[1] + abH) { startGame(); }
@@ -473,7 +513,7 @@ const player = {
 };
 
 function updatePlayer(dt) {
-  let dx = joystick.dx, dy = joystick.dy;
+  let dx = joystick.dx * joySensitivity, dy = joystick.dy * joySensitivity;
   if (keys['KeyW'] || keys['ArrowUp'])    dy -= 1;
   if (keys['KeyS'] || keys['ArrowDown'])  dy += 1;
   if (keys['KeyA'] || keys['ArrowLeft'])  dx -= 1;
@@ -1223,10 +1263,11 @@ function drawLevelIntro() {
 }
 
 function drawPauseMenu() {
-  const PW = 300, PH = 380;
+  const PW = 300, PH = 480;
   const ox = Math.floor((CANVAS_W - PW) / 2);
   const oy = Math.floor((CANVAS_H - PH) / 2);
   const cx = ox + PW / 2;
+  const sX = ox + 50, sW = PW - 100;
 
   ctx.fillStyle = 'rgba(0,0,0,0.74)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -1239,63 +1280,73 @@ function drawPauseMenu() {
 
   ctx.textAlign = 'center';
 
-  ctx.font      = 'bold 26px Courier New';
-  ctx.fillStyle = '#ff4422';
+  ctx.font = 'bold 26px Courier New'; ctx.fillStyle = '#ff4422';
   ctx.fillText('PAUSED', cx, oy + 42);
 
-  ctx.font      = '11px Courier New';
-  ctx.fillStyle = '#666';
+  // — Volume —
+  ctx.font = '11px Courier New'; ctx.fillStyle = '#666';
   ctx.fillText('VOLUME', cx, oy + 78);
-
-  const sX = ox + 50, sY = oy + 96, sW = PW - 100;
-  ctx.fillStyle = '#252528';
-  ctx.fillRect(sX, sY - 3, sW, 6);
-  ctx.fillStyle = '#ff9955';
-  ctx.fillRect(sX, sY - 3, sW * masterVolume, 6);
-  const tX = sX + sW * masterVolume;
-  ctx.beginPath(); ctx.arc(tX, sY, 8, 0, Math.PI * 2);
-  ctx.fillStyle = '#fff'; ctx.fill();
-  ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1; ctx.stroke();
-  ctx.font      = '10px Courier New';
-  ctx.fillStyle = '#555';
+  const volY = oy + 96;
+  ctx.fillStyle = '#252528'; ctx.fillRect(sX, volY - 3, sW, 6);
+  ctx.fillStyle = '#ff9955'; ctx.fillRect(sX, volY - 3, sW * masterVolume, 6);
+  ctx.beginPath(); ctx.arc(sX + sW * masterVolume, volY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = '10px Courier New'; ctx.fillStyle = '#555';
   ctx.fillText(Math.round(masterVolume * 100) + '%', cx, oy + 118);
 
-  ctx.font      = '11px Courier New';
-  ctx.fillStyle = '#666';
+  // — Difficulty —
+  ctx.font = '11px Courier New'; ctx.fillStyle = '#666';
   ctx.fillText('DIFFICULTY', cx, oy + 140);
-
-  const diffs  = ['easy', 'normal', 'hard'];
-  const dlbls  = ['EASY', 'NORMAL', 'HARD'];
+  const diffs = ['easy','normal','hard'], dlbls = ['EASY','NORMAL','HARD'];
   const dbW = 78, dbH = 26, dbGap = 6;
   const dtW = diffs.length * dbW + (diffs.length - 1) * dbGap;
   const dSX = cx - dtW / 2;
   diffs.forEach((d, i) => {
     const bx = dSX + i * (dbW + dbGap), by = oy + 150;
     const on = difficulty === d;
-    ctx.fillStyle   = on ? '#ff4422' : '#1e1e24';
-    ctx.strokeStyle = on ? '#ff6644' : '#333';
-    ctx.lineWidth   = 1.5;
+    ctx.fillStyle = on ? '#ff4422' : '#1e1e24'; ctx.strokeStyle = on ? '#ff6644' : '#333'; ctx.lineWidth = 1.5;
     ctx.fillRect(bx, by, dbW, dbH); ctx.strokeRect(bx, by, dbW, dbH);
-    ctx.font      = on ? 'bold 10px Courier New' : '10px Courier New';
-    ctx.fillStyle = on ? '#fff' : '#666';
+    ctx.font = on ? 'bold 10px Courier New' : '10px Courier New'; ctx.fillStyle = on ? '#fff' : '#666';
     ctx.fillText(dlbls[i], bx + dbW / 2, by + 17);
   });
 
+  // — Separator —
   ctx.strokeStyle = '#252528'; ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(ox + 24, oy + 192); ctx.lineTo(ox + PW - 24, oy + 192);
-  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ox + 24, oy + 192); ctx.lineTo(ox + PW - 24, oy + 192); ctx.stroke();
 
+  // — Move Speed slider —
+  ctx.font = '11px Courier New'; ctx.fillStyle = '#666';
+  ctx.fillText('MOVE SPEED', cx, oy + 208);
+  const jsY = oy + 222, jsFrac = (joySensitivity - 0.5) / 1.5;
+  ctx.fillStyle = '#252528'; ctx.fillRect(sX, jsY - 3, sW, 6);
+  ctx.fillStyle = '#4488ff'; ctx.fillRect(sX, jsY - 3, sW * jsFrac, 6);
+  ctx.beginPath(); ctx.arc(sX + sW * jsFrac, jsY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#4488ff'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = '10px Courier New'; ctx.fillStyle = '#555';
+  ctx.fillText(joySensitivity.toFixed(1) + 'x', cx, oy + 238);
+
+  // — Aim Drag slider —
+  ctx.font = '11px Courier New'; ctx.fillStyle = '#666';
+  ctx.fillText('AIM DRAG', cx, oy + 254);
+  const asY = oy + 268, asFrac = (aimSensitivity - 0.5) / 1.5;
+  ctx.fillStyle = '#252528'; ctx.fillRect(sX, asY - 3, sW, 6);
+  ctx.fillStyle = '#22cc88'; ctx.fillRect(sX, asY - 3, sW * asFrac, 6);
+  ctx.beginPath(); ctx.arc(sX + sW * asFrac, asY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#22cc88'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = '10px Courier New'; ctx.fillStyle = '#555';
+  ctx.fillText(aimSensitivity.toFixed(1) + 'x', cx, oy + 284);
+
+  // — Separator —
+  ctx.strokeStyle = '#252528'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ox + 24, oy + 300); ctx.lineTo(ox + PW - 24, oy + 300); ctx.stroke();
+
+  // — Action buttons —
   const abX = ox + 36, abW = PW - 72, abH = 34;
-  [['RESUME', oy+204], ['RESTART', oy+250], ['MAIN MENU', oy+296]].forEach(([lbl, by]) => {
-    const hover = mouse.x > abX && mouse.x < abX + abW &&
-                  mouse.y > by  && mouse.y < by  + abH;
-    ctx.fillStyle   = hover ? '#ff4422' : '#1e1e24';
-    ctx.strokeStyle = hover ? '#ff6644' : '#333';
-    ctx.lineWidth   = 1.5;
+  [['RESUME', oy+314], ['RESTART', oy+360], ['MAIN MENU', oy+406]].forEach(([lbl, by]) => {
+    const hover = mouse.x > abX && mouse.x < abX + abW && mouse.y > by && mouse.y < by + abH;
+    ctx.fillStyle = hover ? '#ff4422' : '#1e1e24'; ctx.strokeStyle = hover ? '#ff6644' : '#333'; ctx.lineWidth = 1.5;
     ctx.fillRect(abX, by, abW, abH); ctx.strokeRect(abX, by, abW, abH);
-    ctx.font      = 'bold 13px Courier New';
-    ctx.fillStyle = hover ? '#fff' : '#bbb';
+    ctx.font = 'bold 13px Courier New'; ctx.fillStyle = hover ? '#fff' : '#bbb';
     ctx.fillText(lbl, cx, by + 22);
   });
 
