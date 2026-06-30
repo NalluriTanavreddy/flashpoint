@@ -30,7 +30,7 @@
 | 📈 **Difficulty scaling** | Gunner accuracy and fire rate increase each level — plus Easy/Normal/Hard |
 | 📡 **Minimap radar** | Live RADAR panel auto-scales to the current arena size |
 | 🔊 **Synthesised audio** | All sounds generated via Web Audio oscillators — zero audio files |
-| ⚙️ **In-canvas pause menu** | Volume slider · difficulty toggle · restart · main menu |
+| ⚙️ **In-canvas pause menu** | Volume · difficulty · move speed + aim drag sensitivity sliders · restart · main menu |
 | 💾 **Persistent records** | High score, best level, total kills, accuracy via `localStorage` |
 
 ---
@@ -44,7 +44,7 @@
 <br/><em>Level intro — the layout is revealed before combat starts</em>
 </td>
 <td width="50%" align="center">
-<img src="screenshots/pause-menu.svg" width="100%" alt="In-canvas pause menu with volume and difficulty controls"/>
+<img src="screenshots/pause-menu.svg" width="100%" alt="In-canvas pause menu with volume, difficulty and sensitivity controls"/>
 <br/><em>Pause menu — fully canvas-drawn, opened with ESC or the HUD icon</em>
 </td>
 </tr>
