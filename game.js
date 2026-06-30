@@ -1321,7 +1321,7 @@ function beginLevel(level) {
   drones = [];
   droneWarningTimer = 0;
   if (level >= 10) {
-    const count = Math.min(16, Math.ceil(3 * Math.pow(1.5, level - 10)));
+    const count = Math.min(16, Math.ceil(3 + (level - 10) * 0.5));
     const corners = [[30,30],[CANVAS_W-30,30],[30,CANVAS_H-30],[CANVAS_W-30,CANVAS_H-30]];
     for (let i = 0; i < count; i++) {
       const [cx, cy] = corners[i % 4];
