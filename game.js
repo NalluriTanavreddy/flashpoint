@@ -75,6 +75,12 @@ let levelActive    = false;
 let introTimer       = 0;
 let mapJustExpanded  = false;
 const INTRO_DURATION = 1.6;
+
+let drones            = [];
+let droneWarningTimer = 0;
+const DRONE_R            = 9;
+const DRONE_SPEED        = 148;
+const DRONE_WARNING_SECS = 5;
 let masterVolume     = 0.8;
 let difficulty       = 'normal';
 let volumeDragging   = false;
@@ -192,6 +198,7 @@ function sndHeart()      { try { const c=ac(),t=c.currentTime; _tone(c,660,t,0.1
 function sndLevelClear() { try { const c=ac(),t=c.currentTime; _tone(c,440,t,0.16,0.2,'sine'); _tone(c,550,t+0.14,0.16,0.2,'sine'); _tone(c,660,t+0.28,0.22,0.2,'sine'); } catch(e){} }
 function sndDeath()      { try { const c=ac(),t=c.currentTime; _tone(c,220,t,0.14,0.24,'sawtooth',200); _tone(c,160,t+0.13,0.14,0.2,'sawtooth',140); _tone(c,90,t+0.26,0.28,0.18,'sawtooth',60); _noise(c,t,0.38,0.1); } catch(e){} }
 function sndDryFire()    { try { const c=ac(),t=c.currentTime; _tone(c,90,t,0.06,0.08,'square'); } catch(e){} }
+function sndDroneWarn()  { try { const c=ac(),t=c.currentTime; _tone(c,72,t,0.28,0.13,'sawtooth',50); _tone(c,108,t+0.1,0.18,0.06,'square',85); } catch(e){} }
 
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -642,6 +649,105 @@ function resolveEnemyMeleePlayerCollisions() {
   }
 }
 
+function updateDrones(dt) {
+  if (droneWarningTimer > 0) {
+    const before = droneWarningTimer;
+    droneWarningTimer -= dt;
+    // Beep on each whole-second tick of the countdown
+    if (Math.ceil(droneWarningTimer) < Math.ceil(before) && droneWarningTimer > 0) sndDroneWarn();
+    if (droneWarningTimer <= 0) {
+      droneWarningTimer = 0;
+      drones.forEach(d => d.active = true);
+      sndDroneWarn();
+    }
+    return;
+  }
+  for (const d of drones) {
+    if (!d.active) continue;
+    if (d.flashTimer > 0) d.flashTimer -= dt;
+    if (d.meleeTimer > 0) d.meleeTimer -= dt;
+    const tdx = player.x - d.x, tdy = player.y - d.y;
+    const dist = Math.hypot(tdx, tdy);
+    if (dist > 1) { d.x += (tdx / dist) * DRONE_SPEED * dt; d.y += (tdy / dist) * DRONE_SPEED * dt; }
+  }
+}
+
+function resolveBulletDroneCollisions() {
+  if (!drones.length) return;
+  const liveBullets = [], hitDrones = new Set();
+  for (const b of bullets) {
+    let hit = false;
+    for (const d of drones) {
+      if (!hitDrones.has(d) && d.active && Math.hypot(b.x - d.x, b.y - d.y) < DRONE_R + BULLET_R) {
+        hit = true; hitDrones.add(d); session.hits++;
+        sndEnemyKill(); session.kills++;
+        streakCount++; streakTimer = STREAK_WINDOW;
+        const pts = 75 * currentLevel * streakMult();
+        runScore += pts; player.ammo += AMMO_PER_KILL;
+        spawnPopup(d.x, d.y - 20, `+${pts}`, '#aa44ff');
+        spawnParticles(d.x, d.y, 10, '#aa44ff', 120, 3.5);
+        spawnParticles(d.x, d.y,  5, '#cc88ff',  60, 2);
+        break;
+      }
+    }
+    if (!hit) liveBullets.push(b);
+  }
+  drones  = drones.filter(d => !hitDrones.has(d));
+  bullets = liveBullets;
+}
+
+function resolveDroneMeleePlayerCollisions() {
+  if (gameState !== State.PLAYING) return;
+  for (const d of drones) {
+    if (!d.active || d.meleeTimer > 0) continue;
+    if (Math.hypot(player.x - d.x, player.y - d.y) < PLAYER_R + DRONE_R + 2) {
+      player.hp -= 0.5; player.flashTimer = 0.22;
+      d.meleeTimer = 1.0;
+      sndPlayerHit(); triggerShake(4, 0.15);
+      spawnParticles(player.x, player.y, 5, '#ff33ff', 65, 2.5);
+      if (player.hp <= 0) triggerPlayerDeath();
+    }
+  }
+}
+
+function drawDrones() {
+  const now = performance.now() * 0.001;
+  for (const d of drones) {
+    if (!d.active) continue;
+    const flash = d.flashTimer > 0;
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(now * 3.5);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      const ax = Math.cos(a), ay = Math.sin(a);
+      ctx.strokeStyle = flash ? '#fff' : '#aa44ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ax * 4, ay * 4); ctx.lineTo(ax * 11, ay * 11); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ax * 11, ay * 11, 2, 0, Math.PI * 2);
+      ctx.fillStyle = flash ? '#fff' : '#cc66ff'; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = flash ? '#fff' : '#ff44ff'; ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawDroneWarning() {
+  if (droneWarningTimer <= 0) return;
+  const blink = Math.floor(droneWarningTimer * 3) % 2 === 0;
+  ctx.save();
+  ctx.font = 'bold 13px Courier New'; ctx.textAlign = 'center';
+  const secs  = Math.ceil(droneWarningTimer);
+  const label = `⚠  DRONE STRIKE  ·  ${secs}s`;
+  const tw    = ctx.measureText(label).width;
+  const bw = tw + 28, bh = 24, bx = (CANVAS_W - bw) / 2, by = 36;
+  ctx.globalAlpha = blink ? 0.95 : 0.5;
+  ctx.fillStyle   = '#1a0030'; ctx.fillRect(bx, by, bw, bh);
+  ctx.strokeStyle = '#aa44ff'; ctx.lineWidth = 1.5; ctx.strokeRect(bx, by, bw, bh);
+  ctx.fillStyle   = '#cc88ff'; ctx.fillText(label, CANVAS_W / 2, by + 16);
+  ctx.restore();
+}
+
 function drawEnemyBullets() {
   for (const b of enemyBullets) {
     ctx.beginPath(); ctx.arc(b.x, b.y, BULLET_R - 1, 0, Math.PI * 2);
@@ -863,7 +969,7 @@ function triggerPlayerDeath() {
 }
 
 function checkLevelClear() {
-  if (!levelActive || enemies.length > 0) return;
+  if (!levelActive || enemies.length > 0 || drones.length > 0) return;
   levelActive = false;
   gameState   = State.LEVEL_CLEAR;
   sndLevelClear();
@@ -953,6 +1059,7 @@ function drawScene() {
   drawBullets();
   drawEnemyBullets();
   drawEnemies();
+  drawDrones();
   drawPlayer();
   drawPopups();
   ctx.restore();
@@ -981,7 +1088,8 @@ function drawJoystick() {
 function drawHUD() {
   const PAD = 10;
   ctx.font = 'bold 15px Courier New'; ctx.textAlign = 'center'; ctx.fillStyle = '#ccc';
-  ctx.fillText(`LEVEL ${currentLevel}   ·   ENEMIES  ${enemies.length}`, CANVAS_W / 2, 24);
+  const totalHostiles = enemies.length + drones.filter(d => d.active).length;
+  ctx.fillText(`LEVEL ${currentLevel}   ·   ENEMIES  ${totalHostiles}`, CANVAS_W / 2, 24);
   ctx.font = '13px Courier New'; ctx.textAlign = 'left'; ctx.fillStyle = '#ff9955';
   ctx.fillText(`SCORE  ${runScore}`, PAD, 24);
   if (streakCount >= 2) {
@@ -1084,6 +1192,15 @@ function drawMinimap() {
     ctx.arc(ex, ey, e.isGunner ? 2.5 : 2, 0, Math.PI * 2);
     ctx.fillStyle = e.isGunner ? '#ff8833' : '#cc2200';
     ctx.fill();
+  }
+
+  // Drone blips — blink purple during warning, solid once active
+  const droneBlink = droneWarningTimer > 0 && Math.floor(droneWarningTimer * 3) % 2 === 0;
+  for (const d of drones) {
+    if (d.active || droneBlink) {
+      ctx.beginPath(); ctx.arc(d.x * sx, d.y * sy, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = d.active ? '#cc44ff' : '#7722aa'; ctx.fill();
+    }
   }
 
   const px = player.x * sx, py = player.y * sy;
@@ -1200,6 +1317,23 @@ function beginLevel(level) {
   playerSpawnPoints = generatePlayerSpawnPoints(enemyPos);
   containers        = generateContainers(enemyPos);
   spawnEnemies(enemyPos, level);
+
+  drones = [];
+  droneWarningTimer = 0;
+  if (level >= 10) {
+    const count = Math.min(16, Math.ceil(3 * Math.pow(1.5, level - 10)));
+    const corners = [[30,30],[CANVAS_W-30,30],[30,CANVAS_H-30],[CANVAS_W-30,CANVAS_H-30]];
+    for (let i = 0; i < count; i++) {
+      const [cx, cy] = corners[i % 4];
+      const jitter = Math.floor(i / 4) * 22;
+      drones.push({
+        x: cx + (i >= 4 ? (i % 2 === 0 ? jitter : -jitter) : 0),
+        y: cy + (i >= 4 ? (Math.floor(i / 2) % 2 === 0 ? jitter : -jitter) : 0),
+        active: false, flashTimer: 0, meleeTimer: 0,
+      });
+    }
+    droneWarningTimer = DRONE_WARNING_SECS;
+  }
 
   const [sx, sy]  = playerSpawnPoints[spawnIndex % playerSpawnPoints.length];
   player.x        = sx;
@@ -1375,11 +1509,14 @@ function loop(ts) {
     updateBullets(dt);
     updateEnemyBullets(dt);
     updateEnemies(dt);
+    updateDrones(dt);
     updateHearts(dt);
     updateStreak(dt);
     resolveBulletEnemyCollisions();
+    resolveBulletDroneCollisions();
     resolveEnemyBulletPlayerCollisions();
     resolveEnemyMeleePlayerCollisions();
+    resolveDroneMeleePlayerCollisions();
     collectHearts();
     updateParticles(dt);
     updatePopups(dt);
@@ -1387,6 +1524,7 @@ function loop(ts) {
     checkLevelClear();
     drawScene();
     drawHUD();
+    drawDroneWarning();
   }
   requestAnimationFrame(loop);
 }
